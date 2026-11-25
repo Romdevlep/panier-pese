@@ -1,0 +1,14 @@
+# Système et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets (jamais dans Git !)
+.env
+.env.*
+
+# Phase D — quand Node/Vue arrivera
+node_modules/
+dist/
+*.log
