@@ -13,7 +13,7 @@ et objectiver les habitudes.
 ## 2. Utilisateurs cibles (V1)
 
 - Moi (budget).
-- Ma sœur (saisie quotidienne de ses tickets, remplace aujourd'hui un suivi Excel manuel).
+- Margaux (saisie quotidienne de ses tickets, remplace aujourd'hui un suivi Excel manuel).
 
 ## 3. Périmètre V1
 
@@ -52,7 +52,7 @@ et objectiver les habitudes.
 
 ## 7. Critères de succès V1
 
-- Maïlys1 tient 4 semaines de saisie sans abandonner le projet Excel.
+- Margaux tient 4 semaines de saisie sans abandonner le projet Excel.
 - Une saisie complète en moins de 5 secondes.
 - Export → import sur un autre navigateur sans perte d'aucune ligne.
 
