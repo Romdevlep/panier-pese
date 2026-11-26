@@ -1125,6 +1125,9 @@ function rendreSimulation() {
     }
   }
 
+  const conteneur = $('simu-groupes');
+  conteneur.innerHTML = '';
+
   const zones = [];
   zones.push({ id: '', nom: '❓ Non catégorisé' });
   for (const cat of categories.filter((c) => !c.archivee)) {
