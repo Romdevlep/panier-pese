@@ -14,6 +14,7 @@ const CLE_DEPENSES       = 'pp_depenses';
 const CLE_CATEGORIES     = 'pp_categories';
 const CLE_DERNIER_EXPORT = 'pp_dernier_export';
 const CLE_PREF_MOIS      = 'pp_pref_mois';
+const CLE_TICKETS        = 'pp_tickets';
 
 // Groupes de catégories (fixe dans le prototype — modifiable ici dans le code).
 const GROUPES = ['Alimentation', 'Restaurants', 'Vices payés', 'Transport', 'Maison', 'Santé', 'Loisirs', 'Autre'];
@@ -60,6 +61,9 @@ let depenses   = [];  // { id, date 'AAAA-MM-JJ', montant, categorieId, note, so
 let categories = [];  // { id, nom, groupe, archivee }
 let categorieChoisie = null; // catégorie présélectionnée dans l'onglet Saisir
 let editionEnCours  = null;  // id de la dépense en cours de modification (sinon null)
+let tickets = [];              // { id, magasin, date, lignes, source, creeLe }
+let simuTicketEnEdition = null; // id du ticket affiché (null = nouveau)
+let simuMode = 'creation';      // 'creation' | 'consultation' | 'edition'
 
 /* ---------- 3. OUTILS GÉNÉRAUX ---------- */
 
@@ -174,6 +178,8 @@ function chargerDepuisStockage() {
   catch { depenses = []; }
   try { categories = JSON.parse(localStorage.getItem(CLE_CATEGORIES)) ?? []; }
   catch { categories = []; }
+  try { tickets = JSON.parse(localStorage.getItem(CLE_TICKETS)) ?? []; }
+  catch { tickets = []; }
 
   // Premier lancement : on sème les catégories de départ.
   if (categories.length === 0) {
@@ -186,6 +192,7 @@ function chargerDepuisStockage() {
 function sauvegarder() {
   localStorage.setItem(CLE_DEPENSES, JSON.stringify(depenses));
   localStorage.setItem(CLE_CATEGORIES, JSON.stringify(categories));
+  localStorage.setItem(CLE_TICKETS, JSON.stringify(tickets));
 }
 
 /* ---------- 5. TOAST (message éphémère en bas d'écran) ---------- */
@@ -368,20 +375,28 @@ function rendreHistorique() {
   const conteneur = $('liste-depenses');
   conteneur.innerHTML = '';
 
-  // Tri : date décroissante, puis heure de création décroissante.
-  const trie = [...depenses].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.creeLe.localeCompare(a.creeLe)
-  );
+  // Fusion : dépenses manuelles (sans ticketId) + saisies ticket.
+  const entrees = [];
+  for (const d of depenses) if (!d.ticketId) entrees.push({ type: 'depense', objet: d });
+  for (const t of tickets)     entrees.push({ type: 'ticket',  objet: t });
+  entrees.sort((a, b) => {
+    const da = a.objet.date, db = b.objet.date;
+    const ca = a.objet.creeLe || '', cb = b.objet.creeLe || '';
+    return db.localeCompare(da) || cb.localeCompare(ca);
+  });
 
   let moisCourant = null;
   let trouvees = 0;
-  for (const d of trie) {
-    const cat = categorieParId(d.categorieId);
-    const nomCat = cat ? cat.nom : '';
-    if (recherche && !normaliser(nomCat + ' ' + (d.note || '')).includes(recherche)) continue;
+  for (const e of entrees) {
+    if (e.type === 'depense') {
+      const cat = categorieParId(e.objet.categorieId);
+      const nomCat = cat ? cat.nom : '';
+      if (recherche && !normaliser(nomCat + ' ' + (e.objet.note || '')).includes(recherche)) continue;
+    } else {
+      if (recherche && !normaliser(e.objet.magasin).includes(recherche)) continue;
+    }
     trouvees++;
-    // Un titre par mois, inséré au changement de mois.
-    const mois = d.date.slice(0, 7);
+    const mois = e.objet.date.slice(0, 7);
     if (mois !== moisCourant) {
       moisCourant = mois;
       const titre = document.createElement('h3');
@@ -389,12 +404,46 @@ function rendreHistorique() {
       titre.textContent = libelleMois(mois);
       conteneur.appendChild(titre);
     }
-    conteneur.appendChild(construireLigneDepense(d));
+    conteneur.appendChild(e.type === 'depense'
+      ? construireLigneDepense(e.objet)
+      : construireLigneTicket(e.objet));
   }
   if (trouvees === 0) {
-    conteneur.innerHTML = '<p class="vide">Aucune dépense' +
+    conteneur.innerHTML = '<p class="vide">Aucune saisie' +
       (recherche ? ' pour cette recherche' : '') + '.</p>';
   }
+}
+
+// Une saisie ticket = UNE ligne récapitulative, cliquable vers la fiche.
+function construireLigneTicket(t) {
+  const total = t.lignes.reduce((s, l) => s + l.cents, 0);
+  const ligne = document.createElement('div');
+  ligne.className = 'ligne-depense';
+
+  const nok = document.createElement('span');
+  nok.className = 'point';
+  nok.style.background = '#8d6e63';
+
+  const quoi = document.createElement('div');
+  quoi.className = 'quoi';
+  const nom = document.createElement('span');
+  nom.textContent = '🧾 ' + t.magasin;
+  const jour = new Date(t.date + 'T12:00:00')
+    .toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
+  const info = document.createElement('small');
+  info.textContent = jour + ' · ' + t.lignes.length + ' lignes · toucher pour le détail';
+  quoi.appendChild(nom);
+  quoi.appendChild(info);
+
+  const montant = document.createElement('span');
+  montant.className = 'montant';
+  montant.textContent = formaterEuros(total);
+
+  quoi.appendChild(montant); // réutilise l'alignement : ticket = une ligne large
+  ligne.appendChild(nok);
+  ligne.appendChild(quoi);
+  ligne.addEventListener('click', () => ouvrirFicheTicket(t.id));
+  return ligne;
 }
 
 function supprimerDepense(id) {
@@ -795,6 +844,8 @@ function installerJeuDeTest() {
   localStorage.removeItem(CLE_DEPENSES);
   localStorage.removeItem(CLE_CATEGORIES);
   localStorage.removeItem(CLE_DERNIER_EXPORT);
+  localStorage.removeItem(CLE_TICKETS);
+   
   chargerDepuisStockage();      // recrée les catégories de départ
   categorieChoisie = null;
 
@@ -869,6 +920,7 @@ function installerJeuDeTest() {
 function purgerDonneesTest() {
   const avant = depenses.length;
   depenses = depenses.filter((d) => d.source !== 'test');
+  tickets = tickets.filter((t) => t.source !== 'test');
   if (avant === depenses.length) { montrerToast('Aucune donnée de test à retirer'); return; }
   sauvegarder();
   afficherTotalMois();
@@ -938,9 +990,19 @@ function genererTicketSimule() {
 // Construit tous les groupes de dépôt (dont le bac « Non catégorisé »),
 // puis rend leur contenu. Chaque zone porte data-cat-id ('' = le bac).
 function rendreSimulation() {
-  const conteneur = $('simu-groupes');
-  conteneur.innerHTML = '';
-  $('simu-titre').textContent = 'Ticket : ' + simuMagasin;
+  const titre = simuMode === 'edition' ? 'Ticket : ' + simuMagasin + ' (modification)'
+              : simuMode === 'consultation' ? 'Ticket : ' + simuMagasin
+              : 'Nouveau ticket : ' + simuMagasin;
+  $('simu-titre').textContent = titre;
+  $('simu-info').textContent = simuMode === 'consultation'
+    ? 'Fiche du ticket — lecture seule. « Modifier » pour changer les catégories.'
+    : 'Glisse une ligne par la poignée ⠿, ou tape-la pour choisir une catégorie.';
+  $('bouton-simu-valider').hidden = (simuMode === 'consultation');
+  $('bouton-simu-valider').textContent = simuMode === 'edition'
+    ? 'Enregistrer les modifications' : 'Valider le ticket';
+  $('bouton-simu-modifier').hidden = (simuMode !== 'consultation');
+  $('bouton-simu-supprimer').hidden = (simuMode !== 'consultation');
+  $('bouton-simu-abandonner').textContent = simuMode === 'consultation' ? 'Retour' : 'Abandonner';
 
   const zones = [];
   zones.push({ id: '', nom: '❓ Non catégorisé' });
@@ -987,7 +1049,10 @@ function construireLigneSimu(l) {
   poignee.className = 'simu-poignee';
   poignee.textContent = '⠿';
   poignee.title = 'Glisser vers une catégorie';
-  brancherDeplacement(l, poignee);
+  // Lecture seule (consultation) : ligne inerte — pas de drag, pas de picker.
+  if (simuMode !== 'consultation') {
+    brancherDeplacement(l, poignee);
+  }
 
   const label = document.createElement('span');
   label.textContent = l.label;
@@ -1000,8 +1065,10 @@ function construireLigneSimu(l) {
   ligne.appendChild(label);
   ligne.appendChild(prix);
 
-  // Tap n'importe où ailleurs : sélecteur des catégories existantes.
-  ligne.addEventListener('click', () => ouvrirPicker(l));
+  // Lecture seule (consultation) : ligne inerte — pas de drag, pas de picker.
+  if (simuMode !== 'consultation') {
+    ligne.addEventListener('click', () => ouvrirPicker(l));
+  }
 
   return ligne;
 }
@@ -1050,6 +1117,7 @@ function brancherDeplacement(l, poignee) {
 
 // ---- Le picker : la liste des catégories EXISTANTES, en chips ----
 function ouvrirPicker(l) {
+  if (simuMode === 'consultation') return; // imperméable en lecture seule
   simuLigneChoisie = l;
   $('simu-picker-label').textContent = l.label;
   const liste = $('simu-picker-liste');
@@ -1084,31 +1152,57 @@ function fermerPicker() {
   $('simu-picker').hidden = true;
 }
 
-// Validation : agrège les lignes par catégorie en dépenses réelles
-// (une dépense par catégorie — cf. ta décision produit), ignore le bac.
+// Validation : stocke le ticket ENTIer, puis agrège ses lignes catégorisées
+// en dépenses réelles (une par catégorie), marquées ticketId — ainsi
+// l'historique montre UNE saisie, et la réédition peut remplacer proprement.
 function validerTicketSimule() {
   const restantes = simuLignes.filter((l) => l.catId === null).length;
   if (restantes > 0 &&
-      !confirm(restantes + ' ligne(s) non catégorisée(s) seront ignorées. Continuer ?')) return;
+      !confirm(restantes + ' ligne(s) non catégorisée(s) ne compteront pas dans le total. Continuer ?')) return;
 
   const totaux = new Map();
   for (const l of simuLignes) {
     if (l.catId) totaux.set(l.catId, (totaux.get(l.catId) ?? 0) + l.cents);
   }
-  const aujourdhui = dateLocale();
-  let nb = 0;
+
+  if (simuMode === 'edition') {
+    // Réédition : on remplace lignes du ticket + dépenses agrégées.
+    const t = tickets.find((x) => x.id === simuTicketEnEdition);
+    depenses = depenses.filter((d) => d.ticketId !== simuTicketEnEdition);
+    t.magasin = simuMagasin;
+    t.lignes = simuLignes;
+  } else {
+    const t = { id: nouvelId(), magasin: simuMagasin, date: dateLocale(),
+                lignes: simuLignes, source: 'test', creeLe: new Date().toISOString() };
+    tickets.push(t);
+    simuTicketEnEdition = t.id;
+  }
+
+  const dateTicket = dateLocale();
   for (const [categorieId, cents] of totaux) {
     depenses.push({
-      id: nouvelId(), date: aujourdhui, montant: cents,
-      categorieId, note: simuMagasin, source: 'test', creeLe: new Date().toISOString(),
+      id: nouvelId(), date: dateTicket, montant: cents, categorieId,
+      note: simuMagasin, source: 'test', ticketId: simuTicketEnEdition,
+      creeLe: new Date().toISOString(),
     });
-    nb++;
   }
   sauvegarder();
-  simuLignes = [];
   rafraichirTout();
-  montrerToast('Ticket enregistré : ' + nb + ' dépense(s) ✔');
+  montrerToast('Ticket enregistré : ' + totaux.size + ' dépense(s) ✔');
   afficherOnglet('historique');
+}
+
+// Consultation (lecture seule) ou édition : prélève une COPIE des lignes —
+// « Retour » depuis la consultation ou l'édition ne dégrade jamais le ticket.
+function ouvrirFicheTicket(id, mode = 'consultation') {
+  const t = tickets.find((x) => x.id === id);
+  if (!t) return;
+  simuTicketEnEdition = id;
+  simuMode = mode;
+  simuMagasin = t.magasin;
+  simuLignes = t.lignes.map((l) => ({ ...l }));
+  fermerPicker();
+  afficherOnglet('simulation');
 }
 
 /* ====== fin simulation ticket ====== */
@@ -1249,32 +1343,36 @@ function demarrer() {
   $('bouton-jeu-test').addEventListener('click', installerJeuDeTest);
   $('bouton-purge-test').addEventListener('click', purgerDonneesTest);
 
-  // — Simulation ticket (V2)
+  // — Simulation ticket (V2) : création, consultation, édition
   $('bouton-simu-ticket').addEventListener('click', () => {
     genererTicketSimule();
-    rendreSimulation();
-    $('simu-nouvelle-categorie').open = false;
-    afficherOnglet('simulation');
-  });
-  $('bouton-simu-abandonner').addEventListener('click', () => {
-    simuLignes = [];
-    afficherOnglet('saisir');
-  });
-  $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
-  // — Simulation ticket (V2)
-  $('bouton-simu-ticket').addEventListener('click', () => {
-    genererTicketSimule();
-    rendreSimulation();
+    simuTicketEnEdition = null;
+    simuMode = 'creation';
     fermerPicker();
+    rendreSimulation();
     afficherOnglet('simulation');
   });
   $('bouton-simu-abandonner').addEventListener('click', () => {
     simuLignes = [];
     fermerPicker();
-    afficherOnglet('saisir');
-  });
+    afficherOnglet('saisir'); // depuis une fiche, l'historique est plus naturel :
+  });                          // remplace par 'historique' si tu préfères
   $('simu-picker-fermer').addEventListener('click', fermerPicker);
   $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
+  $('bouton-simu-modifier').addEventListener('click', () => {
+    simuMode = 'edition';
+    rendreSimulation();
+  });
+  $('bouton-simu-supprimer').addEventListener('click', () => {
+    const t = tickets.find((x) => x.id === simuTicketEnEdition);
+    if (!t || !confirm('Supprimer « ' + t.magasin + ' » et les dépenses qui en découlent ?')) return;
+    tickets = tickets.filter((x) => x.id !== simuTicketEnEdition);
+    depenses = depenses.filter((d) => d.ticketId !== simuTicketEnEdition);
+    sauvegarder();
+    rafraichirTout();
+    montrerToast('Ticket supprimé');
+    afficherOnglet('historique');
+  });
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
