@@ -879,6 +879,184 @@ function purgerDonneesTest() {
 
 /* ====== fin outils de test — À RETIRER ====== */
 
+/* =====================================================================
+   11-ter. SIMULATION TICKET (V2) — À ADAPTER en V2, pas à retirer :
+   l'écran de validation ci-dessous est celui qui recevra les lignes OCR.
+   Le générateur de fausses lignes + le faux moteur disparaîtront alors,
+   remplacés par l'OCR réel.
+   ===================================================================== */
+
+// Tickets fantômes : des libellés FORMAT TICKET (majuscules, troncatures,
+// unités collées) pour se rapprocher de ce que_cracha l'OCR.
+const TICKETS_SIMU = [
+  { magasin: 'INTERMARCHE', lignes: [
+    ['POMMES GALA 1,5KG', 320], ['RADIS X1 BOTTE', 115], ['CAROTTES 1KG', 140],
+    ['RAVIOLIS BOL 400G', 245], ['CHOCOLAT NOIR 100G', 180], ['EAU 6X1,5L', 290],
+    ['VIN ROUGE BORDEAUX', 560], ['SAC PLASTIQUE', 5],
+  ]},
+  { magasin: 'MARCHE DU SAMEDI', lignes: [
+    ['TOMATES GRAPPE 1KG', 340], ['FROMAGE CHEVRE X1', 420],
+    ['BOEUF BOURGUIGNON 2', 840], ['PAIN CAMPAGNE', 210],
+  ]},
+  { magasin: 'BUREAU DE TABAC', lignes: [
+    ['CIGARETTES ROUGES X20', 1160], ['BRIQUET X1', 130], ['JOURNAL', 220],
+  ]},
+];
+
+// Faux moteur : règles mot→catégorie (ce sera le vrai moteur par mots-clés
+// en V2 — même structure). Deux pièges VOLONTAIRES pour tester le
+// glisser-déposer et l'ajout de catégorie : VIN chez les ultra-transformés,
+// CIGARETTES chez Divers, et SAC sans aucune règle.
+const REGLES_SIMU = [
+  { mot: 'POMMES|TOMATES|CAROTTES|RADIS|PAIN|BOEUF|CHEVRE', cat: 'Produits bruts' },
+  { mot: 'RAVIOLIS|CHOCOLAT|EAU',                           cat: 'Ultra-transformés' },
+  { mot: 'VIN',                                             cat: 'Ultra-transformés' }, // piège n°1
+  { mot: 'CIGARETTES',                                      cat: 'Divers' },           // piège n°2
+];
+
+let simuLignes = [];   // { id, label, cents, catId | null }
+let simuMagasin = '';
+
+// Choisit un ticket au hasard et le "passe au moteur" : règles puis rien.
+function genererTicketSimule() {
+  const t = TICKETS_SIMU[Math.floor(Math.random() * TICKETS_SIMU.length)];
+  simuMagasin = t.magasin;
+  simuLignes = t.lignes.map(([label, cents]) => {
+    let catId = null; // pas reconnu par défaut → bac « Non catégorisé »
+    const regle = REGLES_SIMU.find((r) =>
+      new RegExp(r.mot).test(label)
+      && categories.some((c) => c.nom === r.cat)
+    );
+    if (regle) {
+      const c = categories.find((x) => x.nom === regle.cat);
+      if (c) catId = c.id;
+    }
+    return { id: nouvelId(), label, cents, catId };
+  });
+}
+
+// Construit tous les groupes de dépôt (dont le bac « Non catégorisé »),
+// puis rend leur contenu. Chaque zone porte data-cat-id ('' = le bac).
+function rendreSimulation() {
+  const conteneur = $('simu-groupes');
+  conteneur.innerHTML = '';
+  $('simu-titre').textContent = 'Ticket : ' + simuMagasin;
+
+  const zones = [];
+  zones.push({ id: '', nom: '❓ Non catégorisé' });
+  for (const cat of categories.filter((c) => !c.archivee)) {
+    zones.push({ id: cat.id, nom: cat.nom, couleur: COULEURS_GROUPES[cat.groupe] || '#9e9e9e' });
+  }
+
+  for (const zone of zones) {
+    const lignesZone = simuLignes.filter((l) => (l.catId ?? '') === zone.id);
+    // On affiche toujours le bac vide (utile pour y redéposer), mais on
+    // masque les catégories vides pour garder l'écran lisible.
+    if (zone.id !== '' && lignesZone.length === 0) continue;
+
+    const groupe = document.createElement('div');
+    groupe.className = 'simu-groupe';
+    groupe.dataset.catId = zone.id;
+
+    const titre = document.createElement('h3');
+    titre.textContent = (zone.couleur ? '● ' : '') + zone.nom +
+      (lignesZone.length ? ' — ' + formaterEuros(lignesZone.reduce((s, l) => s + l.cents, 0)) : '');
+    if (zone.couleur) {
+      const dot = document.createElement('span');
+      dot.style.color = zone.couleur;
+      dot.textContent = '● ';
+      titre.prepend(dot);
+    }
+    groupe.appendChild(titre);
+
+    for (const l of lignesZone) {
+      const ligne = document.createElement('div');
+      ligne.className = 'simu-ligne';
+      const gauche = document.createElement('span');
+      gauche.textContent = l.label;
+      const prix = document.createElement('strong');
+      prix.textContent = formaterEuros(l.cents);
+      ligne.appendChild(gauche);
+      ligne.appendChild(prix);
+      rendreLigneDeplacable(l, ligne, ligne);
+      groupe.appendChild(ligne);
+    }
+    conteneur.appendChild(groupe);
+  }
+}
+
+// Glisser-déposer aux Pointer Events : marche à la souris COMPTE au doigt.
+// On traîne la vraie ligne (pas un clone), et on relâche sur la zone
+// trouvée sous le doigt via elementFromPoint.
+function rendreLigneDeplacable(l, el) {
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const departX = e.clientX, departY = e.clientY;
+    let dest = null;
+
+    // Pendant le déplacement, la ligne ne doit pas "manger" le point :
+    // sinon elementFromPoint la renvoie elle-même, jamais la zone.
+    el.style.pointerEvents = 'none';
+    el.classList.add('drag');
+    el.setPointerCapture(e.pointerId);
+
+    const bouger = (ev) => {
+      el.style.transform =
+        'translate(' + (ev.clientX - departX) + 'px,' + (ev.clientY - departY) + 'px)';
+      const cible = document.elementFromPoint(ev.clientX, ev.clientY);
+      dest = cible ? cible.closest('.simu-groupe') : null;
+      document.querySelectorAll('.simu-groupe')
+        .forEach((z) => z.classList.toggle('survol', z === dest));
+    };
+    const finir = (ev) => {
+      el.removeEventListener('pointermove', bouger);
+      el.removeEventListener('pointerup', finir);
+      el.removeEventListener('pointercancel', finir);
+      el.style.pointerEvents = '';
+      el.classList.remove('drag');
+      el.style.transform = '';
+      document.querySelectorAll('.simu-groupe')
+        .forEach((z) => z.classList.remove('survol'));
+      if (dest && dest.dataset) {
+        l.catId = dest.dataset.catId === '' ? null : dest.dataset.catId;
+        rendreSimulation(); // recalcule les groupes (les vides s'effacent)
+      }
+    };
+    el.addEventListener('pointermove', bouger);
+    el.addEventListener('pointerup', finir);
+    el.addEventListener('pointercancel', finir);
+  });
+}
+
+// Validation : agrège les lignes par catégorie en dépenses réelles
+// (une dépense par catégorie — cf. ta décision produit), ignore le bac.
+function validerTicketSimule() {
+  const restantes = simuLignes.filter((l) => l.catId === null).length;
+  if (restantes > 0 &&
+      !confirm(restantes + ' ligne(s) non catégorisée(s) seront ignorées. Continuer ?')) return;
+
+  const totaux = new Map();
+  for (const l of simuLignes) {
+    if (l.catId) totaux.set(l.catId, (totaux.get(l.catId) ?? 0) + l.cents);
+  }
+  const aujourdhui = dateLocale();
+  let nb = 0;
+  for (const [categorieId, cents] of totaux) {
+    depenses.push({
+      id: nouvelId(), date: aujourdhui, montant: cents,
+      categorieId, note: simuMagasin, source: 'test', creeLe: new Date().toISOString(),
+    });
+    nb++;
+  }
+  sauvegarder();
+  simuLignes = [];
+  rafraichirTout();
+  montrerToast('Ticket enregistré : ' + nb + ' dépense(s) ✔');
+  afficherOnglet('historique');
+}
+
+/* ====== fin simulation ticket ====== */
+
 /* ---------- 12. DÉMARRAGE : câblage des événements + premier rendu ---------- */
 
 function rafraichirTout() {
@@ -1014,6 +1192,38 @@ function demarrer() {
   // — Outils de test (À RETIRER en version finale)
   $('bouton-jeu-test').addEventListener('click', installerJeuDeTest);
   $('bouton-purge-test').addEventListener('click', purgerDonneesTest);
+
+  // — Simulation ticket (V2)
+  for (const g of GROUPES) $('simu-groupe-categorie').appendChild(new Option(g, g));
+  $('bouton-simu-ticket').addEventListener('click', () => {
+    genererTicketSimule();
+    rendreSimulation();
+    $('simu-nouvelle-categorie').open = false;
+    afficherOnglet('simulation');
+  });
+  $('bouton-simu-abandonner').addEventListener('click', () => {
+    simuLignes = [];
+    afficherOnglet('saisir');
+  });
+  $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
+  $('form-simu-categorie').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nom = $('simu-nom-categorie').value.trim();
+    if (!nom) return;
+    if (categories.some((c) => normaliser(c.nom) === normaliser(nom))) {
+      alert('Une catégorie porte déjà ce nom.'); return;
+    }
+    const c = { id: nouvelId(), nom, groupe: $('simu-groupe-categorie').value, archivee: false };
+    categories.push(c);
+    sauvegarder();
+    peuplerSelectCategories();
+    rendreChips();
+    rendreReglages();
+    $('simu-nom-categorie').value = '';
+    $('simu-nouvelle-categorie').open = false;
+    rendreSimulation();
+    montrerToast('Catégorie « ' + nom + ' » créée — glisse maintenant tes lignes dessus ✔');
+  });
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
