@@ -167,13 +167,24 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
 }
 .simu-groupe h3 { margin: 0 0 6px; font-size: 0.85rem; color: var(--texte-secondaire); }
 .simu-groupe.survol { border-color: var(--vert); background: var(--vert-clair); }
+/* La ligne laisse le scroll vertical au navigateur… */
 .simu-ligne {
-  display: flex; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   background: var(--carte); border: 1px solid var(--bord);
   border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
-  font-size: 0.95rem; touch-action: none; user-select: none;
-  cursor: grab;
+  font-size: 0.95rem; touch-action: pan-y;
+  cursor: pointer;
 }
+/* …sauf la POIGNÉE, seule zone où commence un glisser-déposer. */
+.simu-poignee {
+  flex: 0 0 auto; width: 36px; margin: -10px 0 -10px -12px;
+  padding: 14px 0; text-align: center;
+  color: var(--texte-secondaire); font-size: 1.15rem;
+  touch-action: none;   /* le doigt ne scrolle plus ici : c'est notre zone */
+  cursor: grab;
+  user-select: none;
+}
+.simu-ligne .prix { font-weight: 600; margin-left: auto; }
 .simu-ligne.drag {
   cursor: grabbing; opacity: 0.85;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
