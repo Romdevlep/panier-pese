@@ -50,6 +50,12 @@
                placeholder="ex : Intermarché, boulangerie…">
 
         <button type="submit" id="bouton-valider" class="bouton">Ajouter la dépense</button>
+
+        <!-- ====== Simulation ticket — deviendra le vrai bouton photo en V2 ====== -->
+        <button type="button" id="bouton-simu-ticket" class="bouton secondaire">
+          📷 Simuler un ticket (V2)
+        </button>
+        
         <button type="button" id="bouton-annuler" class="bouton secondaire" hidden>
           Abandonner la modification
         </button>
@@ -145,6 +151,28 @@
         <button id="bouton-reinit" class="bouton danger">Effacer toutes les données</button>
       </div>
 
+    </section>
+
+    <!-- ============ ONGLET (hors nav) : SIMULATION TICKET V2 ============ -->
+    <section id="onglet-simulation" hidden>
+      <div class="carte">
+        <h2 id="simu-titre">Ticket simulé</h2>
+        <p class="info">Glisse chaque ligne dans la bonne catégorie.
+          Les lignes non reconnues par le moteur attendent dans « Non catégorisé ».</p>
+        <div id="simu-groupes"></div>
+        <details id="simu-nouvelle-categorie">
+          <summary>+ Ajouter une catégorie manquante</summary>
+          <form id="form-simu-categorie">
+            <label for="simu-nom-categorie">Nom</label>
+            <input id="simu-nom-categorie" type="text" maxlength="40" required>
+            <label for="simu-groupe-categorie">Groupe</label>
+            <select id="simu-groupe-categorie"></select>
+            <button type="submit" class="bouton">Créer puis catégoriser</button>
+          </form>
+        </details>
+        <button id="bouton-simu-valider" class="bouton">Valider le ticket</button>
+        <button id="bouton-simu-abandonner" class="bouton secondaire">Abandonner</button>
+      </div>
     </section>
 
   </main>
