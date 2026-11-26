@@ -191,3 +191,16 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
   z-index: 20; position: relative;
 }
 .simu-ligne small { color: var(--texte-secondaire); }
+
+/* ---------- Labels ---------- */
+.badge {
+  display: inline-block; margin-left: 6px; padding: 1px 9px;
+  border-radius: 999px; border: 1.5px solid;
+  font-size: 0.72rem; font-weight: 700; vertical-align: middle;
+}
+.badge.plein { color: #fff; }                  /* posé sur le ticket entier */
+.badge.partiel { background: #fff !important; } /* vu sur ≥ 1 ligne */
+.mini-label {
+  display: inline-block; margin-left: 5px; padding: 0 7px;
+  border-radius: 999px; font-size: 0.68rem; font-weight: 600; color: #fff;
+}
