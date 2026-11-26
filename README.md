@@ -21,10 +21,17 @@ niveau de détail.
 - 🧾 **Tickets** : chaque saisie est atomique — une ligne dans l'historique,
   un détail consultable (les lignes du ticket) derrière un simple tap
 - 🏅 **Labels** : une dimension transversale aux catégories (BIO, Évitable…),
-  posable sur tout le ticket ou sur une seule ligne — summary visuel :
-  badge plein = ça vaut pour tout le ticket, badge contour = au moins une ligne
+  posables sur tout le ticket ou sur une ligne — badge plein = label du ticket,
+  badge contour = label présent sur au moins une ligne
+- 🎨 **Catégories et labels personnalisables** : choix parmi 12 couleurs,
+  avec un mode avancé pour choisir une couleur précise ; les catégories
+  s'affichent sans groupes
 - 📊 **Bilan** par période : mois courant (= mois calendaire ou mois glissant,
-  au choix), mois précis, plage de mois, ou depuis le début
+  au choix), mois précis, plage de mois, ou depuis le début ; répartition par
+  catégorie ou par label (sans ligne « Sans label »), et courbe d'évolution
+  sur 6 mois filtrable par catégorie ou label
+- 🧭 **Navigation et préférences** : onglets Bilan, Saisir, Historique,
+  Réglages ; choix de la page d'accueil (Bilan ou Saisir)
 - 🔒 **100 % local** : les données ne quittent jamais l'appareil
 - 📥 Export / import (JSON) et export CSV pour Excel
 
@@ -36,7 +43,7 @@ niveau de détail.
 |---|---|---|
 | A | Mise en place du dépôt + Pages | ✅ |
 | B | Cahier des charges V1 | ✅ |
-| C | Prototype (HTML/CSS/JS) : saisie manuelle, tickets, labels, bilan par période | ✅ |
+| C | Prototype (HTML/CSS/JS) : saisie manuelle, tickets, labels, bilan par période et par périmètre | ✅ |
 | D | Application complète (Vue 3 + Dexie, champ `modifieLe`) | ⏳ |
 | E | Version installable (PWA) + test terrain 4 semaines | ⏳ |
 | V2 | Photo + OCR du ticket, moteur de catégorisation | ⏳ |
@@ -50,5 +57,7 @@ niveau de détail.
 - **Pourquoi un prototype avant le framework ?** Valider le modèle de données
   et l'ergonomie (écran de validation de ticket, drag & drop, picker) avant
   d'écrire le gros œuvre. Presque tout le prototype survit en phase D.
-- **Comment tester ?** Un générateur de jeu de test reproductible (~150
-  dépenses sur 6
+- **Comment tester ?** Ouvrir `index.html` dans un navigateur. Un jeu de test
+  reproductible (~150 dépenses sur 6 mois) est disponible dans
+  **Réglages → Zone de danger**. Pour essayer la simulation d'un ticket,
+  aller dans **Saisir** et cliquer sur **Simuler un ticket (V2)**.
