@@ -14,18 +14,30 @@ const CLE_DEPENSES       = 'pp_depenses';
 const CLE_CATEGORIES     = 'pp_categories';
 const CLE_DERNIER_EXPORT = 'pp_dernier_export';
 const CLE_PREF_MOIS      = 'pp_pref_mois';
+const CLE_PREF_ACCUEIL   = 'pp_pref_accueil';
+const CLE_AIDE_TICKET    = 'pp_aide_ticket_vue';
 const CLE_TICKETS        = 'pp_tickets';
 const CLE_LABELS         = 'pp_labels';
 
-// Palette attribuée dans l'ordre de création : rouge d'abord (Évitable),
-// vert ensuite (BIO)… modificable ici dans le code.
-const PALETTE_LABELS = ['#e53935', '#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00acc1'];
+const COULEURS_CHOIX = [
+  { nom: 'Vert', valeur: '#2e7d32' },
+  { nom: 'Vert clair', valeur: '#7cb342' },
+  { nom: 'Jaune', valeur: '#f9a825' },
+  { nom: 'Orange', valeur: '#ef6c00' },
+  { nom: 'Rouge', valeur: '#c62828' },
+  { nom: 'Rose', valeur: '#ad1457' },
+  { nom: 'Violet', valeur: '#6a1b9a' },
+  { nom: 'Indigo', valeur: '#3949ab' },
+  { nom: 'Bleu', valeur: '#1565c0' },
+  { nom: 'Cyan', valeur: '#00838f' },
+  { nom: 'Turquoise', valeur: '#00897b' },
+  { nom: 'Brun', valeur: '#6d4c41' },
+];
+const PALETTE_LABELS = COULEURS_CHOIX.map((c) => c.valeur);
+const PALETTE_CATEGORIES = COULEURS_CHOIX.map((c) => c.valeur);
 const LABELS_DEPART = ['Évitable', 'BIO'];
 
-// Groupes de catégories (fixe dans le prototype — modifiable ici dans le code).
-const GROUPES = ['Alimentation', 'Restaurants', 'Vices payés', 'Transport', 'Maison', 'Santé', 'Loisirs', 'Autre'];
-
-// Une couleur par groupe : le point qui aidera à lire les listes d'un coup d'œil.
+// Couleurs historiques conservées pour les anciennes catégories sans couleur.
 const COULEURS_GROUPES = {
   'Alimentation': '#43a047',
   'Restaurants':  '#fb8c00',
@@ -39,18 +51,18 @@ const COULEURS_GROUPES = {
 
 // Catégories créées au premier lancement (section 3.2 du CDC).
 const CATEGORIES_DEPART = [
-  { nom: 'Produits bruts',       groupe: 'Alimentation' },
-  { nom: 'Ultra-transformés',    groupe: 'Alimentation' },
-  { nom: 'Épicerie',             groupe: 'Alimentation' },
-  { nom: 'Restaurant',           groupe: 'Restaurants' },
-  { nom: 'Fast-food',            groupe: 'Restaurants' },
-  { nom: 'Café / bar',           groupe: 'Restaurants' },
-  { nom: 'Alcool',               groupe: 'Vices payés' },
-  { nom: 'Tabac',                groupe: 'Vices payés' },
-  { nom: 'Carburant',            groupe: 'Transport' },
-  { nom: 'Transports en commun', groupe: 'Transport' },
-  { nom: 'Pharmacie',            groupe: 'Santé' },
-  { nom: 'Divers',               groupe: 'Autre' },
+  { nom: 'Produits bruts' },
+  { nom: 'Ultra-transformés' },
+  { nom: 'Épicerie' },
+  { nom: 'Restaurant' },
+  { nom: 'Fast-food' },
+  { nom: 'Café / bar' },
+  { nom: 'Alcool' },
+  { nom: 'Tabac' },
+  { nom: 'Carburant' },
+  { nom: 'Transports en commun' },
+  { nom: 'Pharmacie' },
+  { nom: 'Divers' },
 ];
 
 /* ---------- 2. ÉTAT (les "temp-tables" du prototype) ---------- */
@@ -59,7 +71,7 @@ const CATEGORIES_DEPART = [
 // comme dans une vraie caisse — l'addition en entiers évite les erreurs
 // d'arrondi des nombres à virgule flottante. On convertit à l'affichage.
 let depenses   = [];  // { id, date 'AAAA-MM-JJ', montant, categorieId, note, source, creeLe }
-let categories = [];  // { id, nom, groupe, archivee }
+let categories = [];  // { id, nom, couleur, archivee } ; groupe toléré dans les anciennes données
 let categorieChoisie = null; // catégorie présélectionnée dans l'onglet Saisir
 let editionEnCours  = null;  // id de la dépense en cours de modification (sinon null)
 let tickets = [];              // { id, magasin, date, lignes, source, creeLe }
@@ -67,6 +79,10 @@ let simuTicketEnEdition = null; // id du ticket affiché (null = nouveau)
 let simuMode = 'creation';      // 'creation' | 'consultation' | 'edition'
 let labels = [];       // { id, nom, couleur, archivee }
 let simuLabels = [];   // labels posés sur le ticket EN COURS de création/édition
+let bilanDimension = 'categorie';
+let simuEtatInitial = '';
+let simuAideVisible = false;
+let fermerPaletteCouleurActive = null;
 
 /* ---------- 3. OUTILS GÉNÉRAUX ---------- */
 
@@ -79,6 +95,10 @@ function nouvelId() {
 function prefMois() {
   return localStorage.getItem(CLE_PREF_MOIS) === 'glissant' ? 'glissant' : 'calendaire';
 };
+
+function prefAccueil() {
+  return localStorage.getItem(CLE_PREF_ACCUEIL) === 'bilan' ? 'bilan' : 'saisir';
+}
 
 // Ajoute un zéro devant si nécessaire : 7 → '07'. Les mois et jours
 // doivent tenir sur 2 chiffres pour que les dates 'AAAA-MM-JJ' se
@@ -181,6 +201,115 @@ function categorieParId(id) {
 
 function labelParId(id) { return labels.find((x) => x.id === id); }
 
+function couleurCategorie(c) {
+  return c && c.couleur ? c.couleur : (COULEURS_GROUPES[c && c.groupe] || '#9e9e9e');
+}
+
+function creerSelecteurCouleur(couleurInitiale, onChange, nom, compact = false) {
+  let couleur = couleurInitiale || COULEURS_CHOIX[0].valeur;
+  const selecteur = document.createElement('div');
+  selecteur.className = 'selecteur-couleur' + (compact ? ' compact' : '');
+
+  const choix = document.createElement('div');
+  choix.className = 'palette-couleurs';
+  choix.setAttribute('role', 'group');
+  choix.setAttribute('aria-label', 'Couleurs pour ' + nom);
+  choix.hidden = true;
+
+  const boutonActuel = document.createElement('button');
+  boutonActuel.type = 'button';
+  boutonActuel.className = 'couleur-actuelle';
+  boutonActuel.setAttribute('aria-label', 'Choisir une couleur pour ' + nom);
+  boutonActuel.title = 'Changer la couleur';
+  boutonActuel.style.backgroundColor = couleur;
+  boutonActuel.setAttribute('aria-expanded', 'false');
+
+  function actualiserSelection() {
+    boutonActuel.style.backgroundColor = couleur;
+    champAvance.value = couleur;
+    for (const bouton of choix.querySelectorAll('button[data-couleur]')) {
+      bouton.setAttribute('aria-pressed', String(bouton.dataset.couleur === couleur));
+    }
+  }
+
+  for (const option of COULEURS_CHOIX) {
+    const bouton = document.createElement('button');
+    bouton.type = 'button';
+    bouton.className = 'pastille-couleur';
+    bouton.dataset.couleur = option.valeur;
+    bouton.style.backgroundColor = option.valeur;
+    bouton.title = option.nom;
+    bouton.setAttribute('aria-label', option.nom);
+    bouton.setAttribute('aria-pressed', String(option.valeur === couleur));
+    bouton.addEventListener('click', () => {
+      couleur = option.valeur;
+      actualiserSelection();
+      fermerCettePalette();
+      onChange(couleur);
+    });
+    choix.appendChild(bouton);
+  }
+
+  const avancee = document.createElement('div');
+  avancee.className = 'couleur-avancee';
+  const boutonAvance = document.createElement('button');
+  boutonAvance.type = 'button';
+  boutonAvance.className = 'bouton-avance';
+  boutonAvance.textContent = 'Mode avancé';
+  const champAvance = document.createElement('input');
+  champAvance.type = 'color';
+  champAvance.value = couleur;
+  champAvance.setAttribute('aria-label', 'Couleur personnalisée pour ' + nom);
+  champAvance.hidden = true;
+  boutonAvance.addEventListener('click', () => {
+    champAvance.hidden = !champAvance.hidden;
+    boutonAvance.textContent = champAvance.hidden ? 'Mode avancé' : 'Masquer le mode avancé';
+    if (!champAvance.hidden) champAvance.focus();
+  });
+  champAvance.addEventListener('change', () => {
+    couleur = champAvance.value;
+    actualiserSelection();
+    boutonActuel.style.backgroundColor = couleur;
+    fermerCettePalette();
+    onChange(couleur);
+  });
+  avancee.appendChild(boutonAvance);
+  avancee.appendChild(champAvance);
+  choix.appendChild(avancee);
+
+  let fermerCettePalette;
+  fermerCettePalette = () => {
+    choix.hidden = true;
+    boutonActuel.setAttribute('aria-expanded', 'false');
+    if (fermerPaletteCouleurActive === fermerCettePalette) fermerPaletteCouleurActive = null;
+  };
+  boutonActuel.addEventListener('click', () => {
+    if (!choix.hidden) {
+      fermerCettePalette();
+      return;
+    }
+    if (fermerPaletteCouleurActive) fermerPaletteCouleurActive();
+    choix.hidden = false;
+    boutonActuel.setAttribute('aria-expanded', 'true');
+    fermerPaletteCouleurActive = fermerCettePalette;
+  });
+  selecteur.appendChild(boutonActuel);
+  selecteur.appendChild(choix);
+  actualiserSelection();
+  return selecteur;
+}
+
+function afficherSelecteurCouleurFormulaire(conteneurId, champId, couleurInitiale, nom) {
+  const champ = $(champId);
+  champ.value = couleurInitiale;
+  const conteneur = $(conteneurId);
+  conteneur.replaceChildren(creerSelecteurCouleur(
+    couleurInitiale,
+    (couleur) => { champ.value = couleur; },
+    nom
+  ));
+}
+
 // État des labels pour un ticket : plein (sur le ticket) ou partiel (≥ 1 ligne).
 // On parcoure TOUS les labels (archivés compris) : une référence passée doit
 // continuer à s'afficher.
@@ -225,9 +354,12 @@ function chargerDepuisStockage() {
   // Premier lancement : on sème les catégories de départ.
   if (categories.length === 0) {
     categories = CATEGORIES_DEPART.map((c) => ({
-      id: nouvelId(), nom: c.nom, groupe: c.groupe, archivee: false,
+      id: nouvelId(), nom: c.nom, archivee: false,
     }));
   }
+  categories.forEach((c, i) => {
+    if (!c.couleur) c.couleur = PALETTE_CATEGORIES[i % PALETTE_CATEGORIES.length];
+  });
 }
 
 function sauvegarder() {
@@ -288,6 +420,7 @@ function rendreChips() {
     bouton.type = 'button';
     bouton.className = 'chip' + (categorieChoisie === cat.id ? ' choisie' : '');
     bouton.textContent = cat.nom;
+    bouton.style.borderColor = couleurCategorie(cat);
     bouton.addEventListener('click', () => {
       categorieChoisie = cat.id;
       $('champ-categorie').value = cat.id;
@@ -297,20 +430,13 @@ function rendreChips() {
   }
 }
 
-// Remplit le <select> : un <optgroup> par groupe de catégories.
+// Remplit le sélecteur avec les catégories actives, sans groupes.
 function peuplerSelectCategories() {
   const select = $('champ-categorie');
   select.innerHTML = '';
   select.appendChild(new Option('— choisir une catégorie —', ''));
   const actives = categories.filter((c) => !c.archivee);
-  for (const groupe of GROUPES) {
-    const duGroupe = actives.filter((c) => c.groupe === groupe);
-    if (duGroupe.length === 0) continue;
-    const og = document.createElement('optgroup');
-    og.label = groupe;
-    for (const c of duGroupe) og.appendChild(new Option(c.nom, c.id));
-    select.appendChild(og);
-  }
+  for (const c of actives) select.appendChild(new Option(c.nom, c.id));
   // Cas rare : on modifie une dépense pointant vers une catégorie archivée.
   if (categorieChoisie && !actives.some((c) => c.id === categorieChoisie)) {
     const c = categorieParId(categorieChoisie);
@@ -351,12 +477,12 @@ function modifierDepense(id) {
 
 // Total affiché sous le titre : suit la préférence calendaire / glissant.
 function afficherTotalMois() {
-  let label;
+  let label = 'Ce mois-ci';
   if (prefMois() === 'glissant') {
-    label = 'Mois glissant';
+    label += ' (' + libellePeriode(bornesMoisCourant()) + ')';
   } else {
     const l = libelleMois(dateLocale().slice(0, 7));
-    label = l.charAt(0).toUpperCase() + l.slice(1);
+    label += ' — ' + l.charAt(0).toUpperCase() + l.slice(1);
   }
   $('total-mois').textContent = label + ' : ' + formaterEuros(totalSurPeriode(bornesMoisCourant()));
 }
@@ -368,7 +494,7 @@ function afficherTotalMois() {
 function construireLigneDepense(d) {
   const cat = categorieParId(d.categorieId);
   const nomCat = cat ? cat.nom : '(catégorie supprimée)';
-  const couleur = cat ? (COULEURS_GROUPES[cat.groupe] || '#9e9e9e') : '#9e9e9e';
+  const couleur = cat ? couleurCategorie(cat) : '#9e9e9e';
 
   const ligne = document.createElement('div');
   ligne.className = 'ligne-depense';
@@ -518,12 +644,15 @@ function construireCarteBarres(titre, lignes) {
     const li = document.createElement('div');
     li.className = 'bilan-libelle';
     const gauche = document.createElement('span');
-    gauche.textContent = (l.point ? '● ' : '') + l.libelle;
-    if (l.couleur) gauche.style.color = l.couleur;
+    if (l.point && l.couleur) {
+      const point = document.createElement('span');
+      point.textContent = '● ';
+      point.style.color = l.couleur;
+      gauche.appendChild(point);
+    }
+    gauche.appendChild(document.createTextNode(l.libelle));
     const droit = document.createElement('span');
     droit.textContent = l.complement || formaterEuros(l.cents);
-    gauche.style.color = ''; // le libellé reprend la couleur par défaut du texte
-    if (l.point && l.couleur) gauche.innerHTML = '<span style="color:' + l.couleur + '">●</span> ' + l.libelle;
     li.appendChild(gauche);
     li.appendChild(droit);
 
@@ -542,11 +671,112 @@ function construireCarteBarres(titre, lignes) {
   return carte;
 }
 
+function construireCarteEvolution(lignes) {
+  const carte = document.createElement('div');
+  carte.className = 'carte';
+  const titre = document.createElement('h2');
+  titre.textContent = 'Évolution (6 mois)';
+  carte.appendChild(titre);
+
+  const libellePerimetre = document.createElement('label');
+  libellePerimetre.htmlFor = 'select-evolution-perimetre';
+  libellePerimetre.textContent = 'Voir l’évolution pour';
+  const selectPerimetre = document.createElement('select');
+  selectPerimetre.id = 'select-evolution-perimetre';
+  selectPerimetre.setAttribute('aria-label', 'Périmètre de l’évolution');
+  selectPerimetre.appendChild(new Option('Toutes les dépenses', 'tout'));
+
+  if (categories.length) {
+    const groupeCategories = document.createElement('optgroup');
+    groupeCategories.label = 'Catégories';
+    for (const categorie of categories) {
+      groupeCategories.appendChild(new Option(
+        categorie.nom + (categorie.archivee ? ' (archivée)' : ''),
+        'categorie:' + categorie.id
+      ));
+    }
+    selectPerimetre.appendChild(groupeCategories);
+  }
+  if (labels.length) {
+    const groupeLabels = document.createElement('optgroup');
+    groupeLabels.label = 'Labels';
+    for (const label of labels) {
+      groupeLabels.appendChild(new Option(
+        label.nom + (label.archivee ? ' (archivé)' : ''),
+        'label:' + label.id
+      ));
+    }
+    selectPerimetre.appendChild(groupeLabels);
+  }
+  selectPerimetre.value = bilanPerimetre;
+  if (!selectPerimetre.value) {
+    bilanPerimetre = 'tout';
+    selectPerimetre.value = 'tout';
+  }
+  carte.appendChild(libellePerimetre);
+  carte.appendChild(selectPerimetre);
+
+  const largeur = 360, hauteur = 150, marge = 28;
+  const maxi = Math.max(...lignes.map((l) => l.cents), 1);
+  const points = lignes.map((l, i) => ({
+    x: marge + i * (largeur - 2 * marge) / Math.max(lignes.length - 1, 1),
+    y: hauteur - marge - (l.cents / maxi) * (hauteur - 2 * marge),
+  }));
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + largeur + ' ' + hauteur);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Évolution des dépenses par mois sur six mois');
+  const [typePerimetre, idPerimetre] = bilanPerimetre.split(':');
+  const categoriePerimetre = typePerimetre === 'categorie'
+    ? categorieParId(idPerimetre) : null;
+  const labelPerimetre = typePerimetre === 'label'
+    ? labelParId(idPerimetre) : null;
+  const couleurPerimetre = categoriePerimetre
+    ? couleurCategorie(categoriePerimetre)
+    : labelPerimetre ? labelPerimetre.couleur || '#9e9e9e' : '#2e7d32';
+  const path = document.createElementNS(svg.namespaceURI, 'polyline');
+  path.setAttribute('points', points.map((p) => p.x + ',' + p.y).join(' '));
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', couleurPerimetre);
+  path.setAttribute('stroke-width', '3');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
+  points.forEach((p, i) => {
+    const cercle = document.createElementNS(svg.namespaceURI, 'circle');
+    cercle.setAttribute('cx', p.x);
+    cercle.setAttribute('cy', p.y);
+    cercle.setAttribute('r', '4');
+    cercle.setAttribute('fill', bilanPerimetre === 'tout'
+      ? lignes[i].couleur || '#2e7d32' : couleurPerimetre);
+    svg.appendChild(cercle);
+  });
+  carte.appendChild(svg);
+  const labelsMois = document.createElement('div');
+  labelsMois.className = 'evolution-mois';
+  lignes.forEach((l) => {
+    const item = document.createElement('span');
+    item.textContent = l.libelle;
+    labelsMois.appendChild(item);
+  });
+  carte.appendChild(labelsMois);
+  const montants = document.createElement('div');
+  montants.className = 'evolution-montants';
+  lignes.forEach((l) => {
+    const item = document.createElement('span');
+    item.textContent = formaterEuros(l.cents);
+    montants.appendChild(item);
+  });
+  carte.appendChild(montants);
+  return carte;
+}
+
 /* ----- État de la vue Bilan (non persisté : « Ce mois-ci » par défaut) ----- */
 let bilanMode    = 'mois-courant';             // 'mois-courant' | 'un-mois' | 'plage' | 'tout'
 let bilanMois    = dateLocale().slice(0, 7);   // sélecteur « un mois »
 let bilanMoisDeb = dateLocale().slice(0, 7);   // sélecteur « plage » début
 let bilanMoisFin = dateLocale().slice(0, 7);   // sélecteur « plage » fin
+let bilanPerimetre = 'tout';
 
 // Bornes effectivement utilisées selon le mode.
 function bornesBilan() {
@@ -571,8 +801,38 @@ function titrePeriodeBilan() {
     }
     case 'plage':   return 'Période choisie';
     case 'tout':    return 'Depuis le début';
-    default:        return prefMois() === 'glissant' ? 'Mois glissant' : 'Ce mois-ci';
+    default:        return 'Ce mois-ci';
   }
+}
+
+function totalMoisEvolution(mois) {
+  if (bilanPerimetre === 'tout') {
+    return depenses
+      .filter((d) => d.date.slice(0, 7) === mois)
+      .reduce((somme, d) => somme + d.montant, 0);
+  }
+
+  const [type, id] = bilanPerimetre.split(':');
+  if (type === 'categorie') {
+    return depenses
+      .filter((d) => d.categorieId === id && d.date.slice(0, 7) === mois)
+      .reduce((somme, d) => somme + d.montant, 0);
+  }
+
+  if (type === 'label') {
+    let total = 0;
+    for (const ticket of tickets) {
+      if (ticket.date.slice(0, 7) !== mois) continue;
+      for (const ligne of ticket.lignes || []) {
+        if ((ticket.labels || []).includes(id) || (ligne.labels || []).includes(id)) {
+          total += ligne.cents;
+        }
+      }
+    }
+    return total;
+  }
+
+  return 0;
 }
 
 // Remplit les trois <select> de mois ; le mois courant y figure toujours.
@@ -603,6 +863,7 @@ function rendreBilan() {
 
   const conteneur = $('bilan-contenu');
   conteneur.innerHTML = '';
+  $('select-bilan-dimension').value = bilanDimension;
   const total = totalSurPeriode(b);
 
   // — Carte du total sur la période.
@@ -620,49 +881,82 @@ function rendreBilan() {
   if (total === 0) {
     const vide = document.createElement('div');
     vide.className = 'carte';
-    vide.innerHTML = '<p class="vide">Aucune dépense sur cette période.</p>';
+    const message = document.createElement('p');
+    message.className = 'vide';
+    message.textContent = 'Aucune dépense sur cette période.';
+    vide.appendChild(message);
     conteneur.appendChild(vide);
-    return;
   }
 
-  // — Répartition par catégorie sur la période choisie.
-  const parCategorie = new Map();
-  for (const d of depenses) {
-    if (d.date >= b.debut && d.date <= b.fin) {
-      parCategorie.set(d.categorieId, (parCategorie.get(d.categorieId) ?? 0) + d.montant);
+  if (total > 0 && bilanDimension === 'label') {
+    const parLabel = new Map();
+    for (const t of tickets) {
+      if (t.date < b.debut || t.date > b.fin) continue;
+      for (const ligne of t.lignes || []) {
+        const ids = [...new Set([...(t.labels || []), ...(ligne.labels || [])])];
+        for (const id of ids) {
+          const label = labelParId(id);
+          const nom = label ? label.nom : '(label supprimé)';
+          const actuel = parLabel.get(nom) || { cents: 0, couleur: label ? label.couleur : '#9e9e9e' };
+          actuel.cents += ligne.cents;
+          parLabel.set(nom, actuel);
+        }
+      }
     }
+    const lignesLabels = [...parLabel.entries()].map(([libelle, valeur]) => ({
+      libelle, cents: valeur.cents, couleur: valeur.couleur,
+      complement: formaterEuros(valeur.cents) + ' (' + Math.round((valeur.cents / total) * 100) + '%)',
+    })).sort((a, x) => x.cents - a.cents);
+    if (lignesLabels.length) {
+      conteneur.appendChild(construireCarteBarres('Répartition par label', lignesLabels));
+    } else {
+      const vide = document.createElement('p');
+      vide.className = 'vide';
+      vide.textContent = 'Aucun label sur cette période.';
+      conteneur.appendChild(vide);
+    }
+    const note = document.createElement('p');
+    note.className = 'info';
+    note.textContent = 'Un montant peut compter dans plusieurs labels lorsqu’ils sont cumulés.';
+    conteneur.appendChild(note);
+  } else if (total > 0) {
+    // — Répartition par catégorie sur la période choisie.
+    const parCategorie = new Map();
+    for (const d of depenses) {
+      if (d.date >= b.debut && d.date <= b.fin) {
+        parCategorie.set(d.categorieId, (parCategorie.get(d.categorieId) ?? 0) + d.montant);
+      }
+    }
+    const lignes = [...parCategorie.entries()]
+      .map(([id, cents]) => {
+        const cat = categorieParId(id);
+        return {
+          libelle: cat ? cat.nom : '(catégorie supprimée)',
+          couleur: cat ? couleurCategorie(cat) : '#9e9e9e',
+          cents,
+          complement: formaterEuros(cents) + ' (' + Math.round((cents / total) * 100) + '%)',
+        };
+      })
+      .sort((a, x) => x.cents - a.cents);
+    conteneur.appendChild(construireCarteBarres('Répartition par catégorie', lignes));
   }
-  const lignes = [...parCategorie.entries()]
-    .map(([id, cents]) => {
-      const cat = categorieParId(id);
-      return {
-        libelle: cat ? cat.nom : '(catégorie supprimée)',
-        couleur: cat ? (COULEURS_GROUPES[cat.groupe] || '#9e9e9e') : '#9e9e9e',
-        cents,
-        complement: formaterEuros(cents) + ' (' + Math.round((cents / total) * 100) + '%)',
-      };
-    })
-    .sort((a, x) => x.cents - a.cents);
-  conteneur.appendChild(construireCarteBarres('Répartition par catégorie', lignes));
 
   // — Évolution 6 mois : vue de tendance, toujours en MOIS CALENDARIRES,
   //   ancrée sur aujourd'hui (indépendante de la période sélectionnée).
   const moisCalendaire = dateLocale().slice(0, 7);
   const sixMois = [];
+  const aujourdhui = new Date();
   for (let i = 5; i >= 0; i--) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
+    const d = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth() - i, 1);
     sixMois.push(dateLocale(d).slice(0, 7));
   }
   const lignesMois = sixMois.map((m) => ({
     libelle: new Date(m + '-01T12:00:00')
       .toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
     couleur: m === moisCalendaire ? '#2e7d32' : '#a5c8a7',
-    cents: depenses
-      .filter((d) => d.date.slice(0, 7) === m)
-      .reduce((somme, d) => somme + d.montant, 0),
+    cents: totalMoisEvolution(m),
   }));
-  conteneur.appendChild(construireCarteBarres('Évolution (6 mois)', lignesMois));
+  conteneur.appendChild(construireCarteEvolution(lignesMois));
 }
 
 /* ---------- 10. ONGLET RÉGLAGES : CATÉGORIES ---------- */
@@ -673,7 +967,7 @@ function construireLigneCategorie(c) {
 
   const point = document.createElement('span');
   point.className = 'point';
-  point.style.background = COULEURS_GROUPES[c.groupe] || '#9e9e9e';
+  point.style.background = couleurCategorie(c);
 
   const etiquette = document.createElement('span');
   etiquette.textContent = c.nom;
@@ -691,6 +985,16 @@ function construireLigneCategorie(c) {
   const boutons = document.createElement('div');
   boutons.className = 'boutons';
 
+  const selecteurCouleur = creerSelecteurCouleur(
+    couleurCategorie(c),
+    (nouvelleCouleur) => {
+      c.couleur = nouvelleCouleur;
+      sauvegarder();
+      rendreReglages();
+    },
+    'la catégorie ' + c.nom,
+    true
+  );
   // Renommer (version prototype : prompt() ; on soignera l'écran en phase D).
   const boutonModif = document.createElement('button');
   boutonModif.textContent = '✏️';
@@ -743,6 +1047,7 @@ function construireLigneCategorie(c) {
   });
   boutons.appendChild(boutonSuppr);
 
+  boutons.appendChild(selecteurCouleur);
   ligne.appendChild(boutons);
   return ligne;
 }
@@ -756,13 +1061,24 @@ function rendreListeLabels() {
 
     const point = document.createElement('span');
     point.className = 'point';
-    point.style.background = lb.couleur;
+    point.style.background = lb.couleur || '#9e9e9e';
 
     const nom = document.createElement('span');
     nom.textContent = lb.nom;
 
     const boutons = document.createElement('div');
     boutons.className = 'boutons';
+
+    const selecteurCouleur = creerSelecteurCouleur(
+      lb.couleur || '#9e9e9e',
+      (nouvelleCouleur) => {
+        lb.couleur = nouvelleCouleur;
+        sauvegarder();
+        rendreListeLabels();
+      },
+      'le label ' + lb.nom,
+      true
+    );
 
     const renommer = document.createElement('button');
     renommer.textContent = '✏️';
@@ -781,6 +1097,7 @@ function rendreListeLabels() {
       sauvegarder();
       rendreListeLabels();
     });
+    boutons.appendChild(selecteurCouleur);
     boutons.appendChild(renommer);
     boutons.appendChild(archiver);
 
@@ -794,15 +1111,7 @@ function rendreListeLabels() {
 function rendreReglages() {
   const conteneur = $('liste-categories');
   conteneur.innerHTML = '';
-  // Un bloc par groupe, dans l'ordre défini par la constante GROUPES.
-  for (const groupe of GROUPES) {
-    const duGroupe = categories.filter((c) => c.groupe === groupe);
-    if (duGroupe.length === 0) continue;
-    const titre = document.createElement('h3');
-    titre.textContent = groupe;
-    conteneur.appendChild(titre);
-    for (const c of duGroupe) conteneur.appendChild(construireLigneCategorie(c));
-  }
+  for (const c of categories) conteneur.appendChild(construireLigneCategorie(c));
   rendreListeLabels();
   rendreInfoExport();
 }
@@ -833,6 +1142,8 @@ function exporterJSON() {
     exporteLe: new Date().toISOString(),
     categories,
     depenses,
+    tickets,
+    labels,
   };
   telecharger(
     new Blob([JSON.stringify(contenu, null, 2)], { type: 'application/json' }),
@@ -846,14 +1157,13 @@ function exporterJSON() {
 function exporterCSV() {
   // Sémicolons + virgule décimale + BOM UTF-8 : c'est la combinaison que
   // Excel FR ouvre proprement en double-cliquant le fichier.
-  const lignes = ['Date;Montant (€);Groupe;Catégorie;Note'];
+  const lignes = ['Date;Montant (€);Catégorie;Note'];
   const trie = [...depenses].sort((a, b) => a.date.localeCompare(b.date));
   for (const d of trie) {
     const cat = categorieParId(d.categorieId);
     lignes.push([
       d.date,
       (d.montant / 100).toFixed(2).replace('.', ','),
-      cat ? cat.groupe : '',
       cat ? cat.nom : '(supprimée)',
       (d.note || '').replaceAll(';', ','),
     ].join(';'));
@@ -879,6 +1189,8 @@ async function importerJSON(fichier) {
         depensesValides.length + ' dépenses à importer)')) return;
     categories = donnees.categories;
     depenses = depensesValides;
+    tickets = Array.isArray(donnees.tickets) ? donnees.tickets : [];
+    labels = Array.isArray(donnees.labels) ? donnees.labels : labels;
     sauvegarder();
     rafraichirTout();
     montrerToast('Import réussi : ' + depenses.length + ' dépenses ✔');
@@ -933,9 +1245,9 @@ function installerJeuDeTest() {
   // 1. Table rase (mêmes clés que la réinitialisation complète).
   localStorage.removeItem(CLE_DEPENSES);
   localStorage.removeItem(CLE_CATEGORIES);
-  localStorage.removeItem(CLE_DERNIER_EXPORT);
   localStorage.removeItem(CLE_TICKETS);
   localStorage.removeItem(CLE_LABELS);
+  localStorage.removeItem(CLE_DERNIER_EXPORT);
    
   chargerDepuisStockage();      // recrée les catégories de départ
   categorieChoisie = null;
@@ -1087,28 +1399,32 @@ function rendreSimulation() {
               : simuMode === 'consultation' ? 'Ticket : ' + simuMagasin
               : 'Nouveau ticket : ' + simuMagasin;
   $('simu-titre').textContent = titre;
-  $('simu-info').textContent = simuMode === 'consultation'
-    ? 'Fiche du ticket — lecture seule. « Modifier » pour changer les catégories.'
-    : 'Glisse une ligne par la poignée ⠿, ou tape-la pour choisir une catégorie.';
-  $('bouton-simu-valider').hidden = (simuMode === 'consultation');
+  $('simu-info').textContent = '';
+  $('simu-aide').hidden = !simuAideVisible;
+  $('bouton-simu-valider').hidden = simuMode === 'consultation' ||
+    (simuMode === 'edition' && JSON.stringify({ lignes: simuLignes, labels: simuLabels }) === simuEtatInitial);
   $('bouton-simu-valider').textContent = simuMode === 'edition'
     ? 'Enregistrer les modifications' : 'Valider le ticket';
   $('bouton-simu-modifier').hidden = (simuMode !== 'consultation');
   $('bouton-simu-supprimer').hidden = (simuMode !== 'consultation');
-  $('bouton-simu-abandonner').textContent = simuMode === 'consultation' ? 'Retour' : 'Abandonner';
+  $('bouton-simu-abandonner').hidden = (simuMode === 'consultation');
+  $('bouton-simu-abandonner').textContent = 'Abandonner';
 
      // — Badges d'état dans le titre (visu permanente demandée)
   const badges = etatLabelsTicket(simuLabels, simuLignes);
   const zoneBadge = $('simu-badges');
   zoneBadge.innerHTML = '';
+  zoneBadge.hidden = badges.length === 0;
   for (const e of badges) zoneBadge.appendChild(creerBadge(null, e));
 
   // — Rangée des labels du ticket (création/édition seulement)
   const rangée = $('simu-labels-ticket');
   rangée.innerHTML = '';
-  rangée.hidden = (simuMode === 'consultation');
+  const labelsActifs = labels.filter((x) => !x.archivee);
+  rangée.hidden = simuMode === 'consultation' || labelsActifs.length === 0;
+  $('simu-labels-info').hidden = rangée.hidden;
   if (!rangée.hidden) {
-    for (const lb of labels.filter((x) => !x.archivee)) {
+    for (const lb of labelsActifs) {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'chip' + (simuLabels.includes(lb.id) ? ' choisie' : '');
@@ -1131,22 +1447,20 @@ function rendreSimulation() {
   const zones = [];
   zones.push({ id: '', nom: '❓ Non catégorisé' });
   for (const cat of categories.filter((c) => !c.archivee)) {
-    zones.push({ id: cat.id, nom: cat.nom, couleur: COULEURS_GROUPES[cat.groupe] || '#9e9e9e' });
+    zones.push({ id: cat.id, nom: cat.nom, couleur: couleurCategorie(cat) });
   }
 
   for (const zone of zones) {
     const lignesZone = simuLignes.filter((l) => (l.catId ?? '') === zone.id);
-    // On affiche toujours le bac vide (utile pour y redéposer), mais on
-    // masque les catégories vides pour garder l'écran lisible.
-    if (zone.id !== '' && lignesZone.length === 0) continue;
+    if (lignesZone.length === 0) continue;
 
     const groupe = document.createElement('div');
     groupe.className = 'simu-groupe';
     groupe.dataset.catId = zone.id;
 
     const titre = document.createElement('h3');
-    titre.textContent = (zone.couleur ? '● ' : '') + zone.nom +
-      (lignesZone.length ? ' — ' + formaterEuros(lignesZone.reduce((s, l) => s + l.cents, 0)) : '');
+    titre.textContent = zone.nom +
+      ' — ' + formaterEuros(lignesZone.reduce((s, l) => s + l.cents, 0));
     if (zone.couleur) {
       const dot = document.createElement('span');
       dot.style.color = zone.couleur;
@@ -1168,14 +1482,16 @@ let simuLigneChoisie = null; // la ligne en cours d'affectation via le picker
 function construireLigneSimu(l) {
   const ligne = document.createElement('div');
   ligne.className = 'simu-ligne';
+  if (simuMode === 'consultation') ligne.classList.add('lecture-seule');
 
   const poignee = document.createElement('span');
   poignee.className = 'simu-poignee';
   poignee.textContent = '⠿';
-  poignee.title = 'Glisser vers une catégorie';
+  poignee.title = simuMode === 'consultation' ? 'Lecture seule' : 'Glisser vers une catégorie';
   // Lecture seule (consultation) : ligne inerte — pas de drag, pas de picker.
   if (simuMode !== 'consultation') {
     brancherDeplacement(l, poignee);
+    poignee.addEventListener('click', (e) => e.stopPropagation());
   }
 
   const label = document.createElement('span');
@@ -1185,7 +1501,9 @@ function construireLigneSimu(l) {
   prix.className = 'prix';
   prix.textContent = formaterEuros(l.cents);
 
-  // Mini-étiquettes des labels posés sur cette ligne.
+  ligne.appendChild(poignee);
+
+  // Mini-étiquettes à droite de la poignée, pour ne pas déplacer son alignement.
   for (const idLbl of (l.labels || [])) {
     const lb = labelParId(idLbl);
     if (!lb) continue;
@@ -1196,7 +1514,6 @@ function construireLigneSimu(l) {
     ligne.appendChild(mini);
   }
 
-  ligne.appendChild(poignee);
   ligne.appendChild(label);
   ligne.appendChild(prix);
 
@@ -1262,6 +1579,7 @@ function ouvrirPicker(l) {
     bouton.type = 'button';
     bouton.className = 'chip' + (l.catId === c.id ? ' choisie' : '');
     bouton.textContent = c.nom;
+    bouton.style.borderColor = couleurCategorie(c);
     bouton.addEventListener('click', () => {
       l.catId = c.id;           // re-taper la chip choisie = retirer la ligne ? non :
       fermerPicker();
@@ -1278,14 +1596,20 @@ function ouvrirPicker(l) {
     retirer.addEventListener('click', () => { l.catId = null; fermerPicker(); rendreSimulation(); });
     liste.appendChild(retirer);
   }
-     const rangéeLabels = $('simu-picker-labels');
+  const rangéeLabels = $('simu-picker-labels');
+  const infoLabels = $('simu-picker-labels-info');
   rangéeLabels.innerHTML = '';
-  for (const lb of labels.filter((x) => !x.archivee)) {
+  const labelsActifs = labels.filter((x) => !x.archivee);
+  rangéeLabels.hidden = labelsActifs.length === 0;
+  infoLabels.hidden = rangéeLabels.hidden;
+  for (const lb of labelsActifs) {
     const chip = document.createElement('button');
     chip.type = 'button';
     // ^ opérateur : la ternaire s'applique au className — garde-le comme ci-dessous
     chip.className = 'chip' + ((l.labels || []).includes(lb.id) ? ' choisie' : '');
     chip.textContent = lb.nom;
+    chip.style.borderColor = lb.couleur || '#9e9e9e';
+    if ((l.labels || []).includes(lb.id)) chip.style.background = lb.couleur || '#9e9e9e';
     chip.addEventListener('click', () => {
       l.labels = (l.labels || []).includes(lb.id)
         ? l.labels.filter((x) => x !== lb.id)
@@ -1355,12 +1679,15 @@ function ouvrirFicheTicket(id, mode = 'consultation') {
   simuMode = mode;
   simuMagasin = t.magasin;
   simuLabels = (t.labels || []).slice();
+  simuAideVisible = !localStorage.getItem(CLE_AIDE_TICKET);
+  if (simuAideVisible) localStorage.setItem(CLE_AIDE_TICKET, '1');
   simuLignes = t.lignes.map((l) => ({
     id: l.id, label: l.label, cents: l.cents,
     catId: l.catId ?? null,
     labels: (l.labels || []).slice(),
   }));
   fermerPicker();
+  rendreSimulation();
   afficherOnglet('simulation');
 }
 
@@ -1423,7 +1750,23 @@ function demarrer() {
   $('champ-recherche').addEventListener('input', rendreHistorique);
 
   // — Réglages : formulaire d'ajout de catégorie
-  for (const groupe of GROUPES) $('champ-groupe-categorie').appendChild(new Option(groupe, groupe));
+  afficherSelecteurCouleurFormulaire(
+    'selecteur-couleur-categorie',
+    'champ-couleur-categorie',
+    PALETTE_CATEGORIES[0],
+    'la nouvelle catégorie'
+  );
+  afficherSelecteurCouleurFormulaire(
+    'selecteur-couleur-label',
+    'champ-couleur-label',
+    PALETTE_LABELS[2],
+    'le nouveau label'
+  );
+  $('select-pref-accueil').value = prefAccueil();
+  $('select-pref-accueil').addEventListener('change', function () {
+    localStorage.setItem(CLE_PREF_ACCUEIL, this.value);
+    montrerToast('Page d’accueil enregistrée ✔');
+  });
   $('form-categorie').addEventListener('submit', (e) => {
     e.preventDefault();
     const nom = $('champ-nom-categorie').value.trim();
@@ -1433,11 +1776,17 @@ function demarrer() {
     categories.push({
       id: nouvelId(),
       nom,
-      groupe: $('champ-groupe-categorie').value,
+      couleur: $('champ-couleur-categorie').value || PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
       archivee: false,
     });
     sauvegarder();
     $('champ-nom-categorie').value = '';
+    afficherSelecteurCouleurFormulaire(
+      'selecteur-couleur-categorie',
+      'champ-couleur-categorie',
+      PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
+      'la nouvelle catégorie'
+    );
     peuplerSelectCategories();
     rendreChips();
     rendreReglages();
@@ -1451,11 +1800,17 @@ function demarrer() {
     if (!nom || labels.concat(categories).some((x) => normaliser(x.nom) === normaliser(nom))) return;
     labels.push({
       id: nouvelId(), nom,
-      couleur: PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
+      couleur: $('champ-couleur-label').value || PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
       archivee: false,
     });
     sauvegarder();
     $('champ-nom-label').value = '';
+    afficherSelecteurCouleurFormulaire(
+      'selecteur-couleur-label',
+      'champ-couleur-label',
+      PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
+      'le nouveau label'
+    );
     rendreListeLabels();
     montrerToast('Label ajouté ✔');
   });
@@ -1473,6 +1828,8 @@ function demarrer() {
     if (!confirm('Dernière confirmation : cette action est irréversible (sauf export préalable).')) return;
     localStorage.removeItem(CLE_DEPENSES);
     localStorage.removeItem(CLE_CATEGORIES);
+    localStorage.removeItem(CLE_TICKETS);
+    localStorage.removeItem(CLE_LABELS);
     localStorage.removeItem(CLE_DERNIER_EXPORT);
     chargerDepuisStockage();
     categorieChoisie = null;
@@ -1493,6 +1850,15 @@ function demarrer() {
   }
   $('select-bilan-mois').addEventListener('change', function () {
     bilanMois = this.value; rendreBilan();
+  });
+  $('select-bilan-dimension').addEventListener('change', function () {
+    bilanDimension = this.value;
+    rendreBilan();
+  });
+  $('bilan-contenu').addEventListener('change', (e) => {
+    if (e.target.id !== 'select-evolution-perimetre') return;
+    bilanPerimetre = e.target.value;
+    rendreBilan();
   });
   $('select-bilan-debut').addEventListener('change', function () {
     bilanMoisDeb = this.value;
@@ -1523,6 +1889,8 @@ function demarrer() {
     genererTicketSimule();
     simuTicketEnEdition = null;
     simuMode = 'creation';
+    simuAideVisible = !localStorage.getItem(CLE_AIDE_TICKET);
+    if (simuAideVisible) localStorage.setItem(CLE_AIDE_TICKET, '1');
     fermerPicker();
     rendreSimulation();
     afficherOnglet('simulation');
@@ -1536,7 +1904,13 @@ function demarrer() {
   $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
   $('bouton-simu-modifier').addEventListener('click', () => {
     simuMode = 'edition';
+    simuEtatInitial = JSON.stringify({ lignes: simuLignes, labels: simuLabels });
     rendreSimulation();
+  });
+  $('simu-aide-fermer').addEventListener('click', () => {
+    localStorage.setItem(CLE_AIDE_TICKET, '1');
+    simuAideVisible = false;
+    $('simu-aide').hidden = true;
   });
   $('bouton-simu-supprimer').addEventListener('click', () => {
     const t = tickets.find((x) => x.id === simuTicketEnEdition);
@@ -1551,6 +1925,8 @@ function demarrer() {
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
+  $('champ-couleur-categorie').value = PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length];
+  $('champ-couleur-label').value = PALETTE_LABELS[labels.length % PALETTE_LABELS.length];
   peuplerSelectCategories();
   rendreChips();
   $('champ-date').value = dateLocale();
@@ -1560,6 +1936,7 @@ function demarrer() {
   rendreReglages();
   rendreInfoExport();
   rendreListeLabels();
+  afficherOnglet(prefAccueil());
 }
 
 demarrer();

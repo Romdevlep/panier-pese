@@ -12,6 +12,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -122,7 +123,38 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
 }
 .categorie-ligne .point { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .categorie-ligne .boutons { margin-left: auto; display: flex; }
-.categorie-ligne .boutons button {
+.selecteur-couleur { position: relative; }
+.selecteur-couleur-form { margin: 6px 0 10px; }
+.couleur-actuelle {
+  display: block; width: 32px; height: 32px; padding: 0;
+  border: 3px solid #fff; border-radius: 50%;
+  box-shadow: 0 0 0 1px #8a928a; cursor: pointer;
+}
+.palette-couleurs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 10px;
+  border: 1px solid var(--bord); border-radius: 10px; background: var(--carte);
+}
+.compact .palette-couleurs {
+  position: absolute; top: 100%; right: 0; z-index: 20;
+  width: min(250px, 80vw); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.pastille-couleur {
+  width: 30px; height: 30px; padding: 0; flex: 0 0 30px;
+  border: 2px solid #fff; border-radius: 50%;
+  box-shadow: 0 0 0 1px #aab0aa; cursor: pointer;
+}
+.pastille-couleur[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--texte); }
+.couleur-avancee { display: flex; flex: 1 0 100%; align-items: center; gap: 8px; }
+.bouton-avance {
+  padding: 6px 0; border: 0; background: transparent;
+  color: var(--vert); text-decoration: underline; cursor: pointer;
+}
+.couleur-avancee input[type="color"] {
+  width: 44px; height: 36px; min-height: 36px; padding: 3px; cursor: pointer;
+}
+.compact .palette-couleurs .couleur-avancee input[type="color"] { width: 52px; }
+.categorie-ligne .boutons > button {
   border: 0; background: transparent; padding: 6px; font-size: 1rem;
 }
 .categorie-ligne.archivee { opacity: 0.5; }
@@ -159,7 +191,6 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
   margin: 10px 0 0; text-align: center;
   font-size: 0.85rem; color: var(--texte-secondaire);
 }
-
 /* ---------- Simulation ticket (V2) ---------- */
 .simu-groupe {
   background: var(--fond); border: 2px dashed transparent;
@@ -174,6 +205,10 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
   border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
   font-size: 0.95rem; touch-action: pan-y;
   cursor: pointer;
+}
+.simu-ligne.lecture-seule { cursor: default; }
+.simu-ligne.lecture-seule .simu-poignee {
+  cursor: default; opacity: 0.45; touch-action: pan-y;
 }
 /* …sauf la POIGNÉE, seule zone où commence un glisser-déposer. */
 .simu-poignee {
@@ -204,3 +239,12 @@ input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--
   display: inline-block; margin-left: 5px; padding: 0 7px;
   border-radius: 999px; font-size: 0.68rem; font-weight: 600; color: #fff;
 }
+.simu-badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.aide-ticket { padding: 10px; border-radius: 10px; background: var(--fond); }
+.aide-ticket p { margin: 6px 0; }
+.evolution-mois, .evolution-montants {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px; text-align: center; font-size: 0.68rem; color: var(--texte-secondaire);
+}
+.evolution-montants { margin-top: 4px; font-size: 0.65rem; }
+.carte > svg { display: block; width: 100%; height: auto; margin: 8px 0 2px; }

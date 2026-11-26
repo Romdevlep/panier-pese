@@ -24,10 +24,11 @@ de 5 secondes. Chips des 5 catégories les plus utilisées (fenêtre de 2 mois,
 tri par fréquence).
 
 ### 3.2 Catégories
-Éditables (créer, renommer, archiver) ; un groupe fixe par catégorie
-(Alimentation, Restaurants, Vices payés, Transport, Maison, Santé, Loisirs,
-Autre). La catégorie répond à « qu'est-ce que c'est ? » — une seule par
-dépense. Suppression autorisée uniquement si jamais utilisée.
+Éditables (créer, renommer, archiver) avec une couleur choisie parmi une
+palette de douze couleurs, ou personnalisée via le mode avancé. Les groupes
+ne sont pas utiles et ne sont pas affichés. La
+catégorie répond à « qu'est-ce que c'est ? » — une seule par dépense.
+Suppression autorisée uniquement si jamais utilisée.
 
 ### 3.3 Tickets (saisies atomiques)
 Un ticket = une saisie complète : magasin, date, et la liste des lignes
@@ -46,7 +47,7 @@ La validation d'un ticket produit des dépenses agrégées par catégorie
 Dimension transversale aux catégories : ils répondent à « comment c'est fait ?
 » et se cumulent (BIO, Évitable…). Liste FERMÉE mais modifiable comme les
 catégories (ajouter, renommer, archiver — pas de suppression : les tickets y
-référencent). Pose :
+référencent), avec le même choix de palette et mode avancé. Pose :
 - sur le TICKET entier (ça vaut pour tout), ou
 - sur une LIGNE du ticket (ex. le ticket n'est pas évitable, la ligne
   « paquet de chips » l'est), ou
@@ -75,8 +76,13 @@ plage de deux mois, depuis le début. Règles :
   le stockage : les dépenses gardent leur date exacte ;
 - l'état du sélecteur n'est pas mémorisé (retour « mois courant » à chaque
   ouverture) ;
-- vue de tendance « évolution 6 mois » toujours en mois calendaires,
-  ancrée sur aujourd'hui.
+- le libellé visible reste « Ce mois-ci » ; les dates exactes de la période
+  sont affichées au-dessus du bilan ;
+- répartition consultable par catégorie ou par label (les montants de labels
+  peuvent se cumuler ; les dépenses sans label ne sont pas listées) ;
+- vue de tendance « évolution 6 mois » en courbe, toujours en mois
+  calendaires et ancrée sur aujourd'hui ; filtre possible sur toutes les
+  dépenses, une catégorie ou un label précis.
 
 ### 3.7 Sauvegarde
 Export/import JSON complet (catégories, dépenses, tickets, labels), export
@@ -85,9 +91,9 @@ rappel de la date de dernière sauvegarde. Rotation conseillée : garder les 5
 derniers exports datés.
 
 ### 3.8 Réglages
-Onglets ordonnés par fréquence d'usage : Catégories, Labels, Sauvegarde,
-Préférences (mois calendaire/glissant), Zone de danger (effacement, double
-confirmation).
+Onglets : Bilan, Saisir, Historique, Réglages. Préférences : mois
+calendaire/glissant et page d'accueil (Saisir ou Bilan). Zone de danger :
+effacement avec double confirmation.
 
 ## 4. Modèle de données
 
@@ -97,7 +103,7 @@ agrégées en sont la projection comptable.**
 | Entité | Champs |
 |---|---|
 | Dépense | id, date (AAAA-MM-JJ), montant (CENTIMES, entier), categorieId → Catégorie, note, source ('manuelle'), ticketId? → Ticket, creeLe ; + `modifieLe` en phase D |
-| Catégorie | id, nom, groupe, archivée |
+| Catégorie | id, nom, couleur, archivée |
 | Ticket | id, magasin, date, lignes[] {id, libellé, montants (centimes), categorieId?, labels[]}, labels[], source, creeLe |
 | Label | id, nom, couleur, archivé |
 
@@ -110,7 +116,8 @@ Invariants :
 - `source` distingue l'ORIGINE ('manuelle' / 'test'), `ticketId` distingue
   l'ENTRÉE dans un ticket.
 
-Clés isolées : préférence de mois, date du dernier export.
+Clés isolées : préférence de mois, page d'accueil, aide ticket déjà affichée,
+date du dernier export.
 
 ## 5. Non-objectifs V1 (écrits noir sur blanc)
 
@@ -122,8 +129,6 @@ Clés isolées : préférence de mois, date du dernier export.
 - ❌ Connexion bancaire ou import de relevés
 - ❌ Comptes utilisateurs, synchronisation serveur, multi-appareil
 - ❌ Budgets avec alertes, dépenses récurrentes
-- ❌ Cumuls par label au Bilan (la récompense du mécanisme labels — chantier
-  délibérément après la phase D)
 
 ## 6. Feuille de route V2+
 
@@ -165,6 +170,9 @@ Clés isolées : préférence de mois, date du dernier export.
   calendaire/glissant, préférence de lecture uniquement.
 - 2026-11 : une catégorie/label manquante se crée dans Réglages, pas à la
   volée sur l'écran de validation (geste rare, écran allégé).
+- 2026-11 : les catégories n'ont plus de groupes visibles ; couleurs des
+  catégories et labels réglables via une palette de douze couleurs et un mode
+  avancé, et le bilan peut répartir par label.
 - 2026-11 : montants en centimes, dates en AAAA-MM-JJ, export JSON comme
   format pivot de sauvegarde.
 - 2026-11 : smartphone = source principale des données (la caméra y est) ;

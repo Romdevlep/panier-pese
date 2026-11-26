@@ -16,9 +16,9 @@
 
   <!-- Navigation : 4 boutons, chaque data-onglet pointe vers une <section> -->
   <nav>
+    <button data-onglet="bilan">Bilan</button>
     <button data-onglet="saisir" class="actif">Saisir</button>
     <button data-onglet="historique">Historique</button>
-    <button data-onglet="bilan">Bilan</button>
     <button data-onglet="reglages">Réglages</button>
   </nav>
 
@@ -95,6 +95,11 @@
         <p id="libelle-periode" class="libelle-periode"></p>
       </div>
 
+      <label for="select-bilan-dimension">Répartition</label>
+      <select id="select-bilan-dimension">
+        <option value="categorie">Par catégorie</option>
+        <option value="label">Par label</option>
+      </select>
       <div id="bilan-contenu"></div>
     </section>
 
@@ -110,8 +115,9 @@
           <form id="form-categorie">
             <label for="champ-nom-categorie">Nom</label>
             <input id="champ-nom-categorie" type="text" maxlength="40" required>
-            <label for="champ-groupe-categorie">Groupe</label>
-            <select id="champ-groupe-categorie" required></select>
+            <label>Couleur</label>
+            <div id="selecteur-couleur-categorie" class="selecteur-couleur-form"></div>
+            <input id="champ-couleur-categorie" type="hidden" value="#2e7d32">
             <button type="submit" class="bouton">Ajouter</button>
           </form>
         </details>
@@ -127,6 +133,9 @@
           <form id="form-label">
             <label for="champ-nom-label">Nom</label>
             <input id="champ-nom-label" type="text" maxlength="30" required>
+            <label>Couleur</label>
+            <div id="selecteur-couleur-label" class="selecteur-couleur-form"></div>
+            <input id="champ-couleur-label" type="hidden" value="#2e7d32">
             <button type="submit" class="bouton">Ajouter</button>
           </form>
         </details>
@@ -151,6 +160,11 @@
           <option value="calendaire">Le mois calendaire (du 1er au dernier jour)</option>
           <option value="glissant">Le mois glissant (du même jour du mois dernier à aujourd'hui)</option>
         </select>
+        <label for="select-pref-accueil">Page à l’ouverture</label>
+        <select id="select-pref-accueil">
+          <option value="saisir">Saisir</option>
+          <option value="bilan">Bilan</option>
+        </select>
       </div>
 
       <div class="carte">
@@ -174,15 +188,20 @@
         <h2 id="simu-titre">Ticket simulé</h2>
         <p id="simu-info" class="info"></p>
         <div id="simu-groupes"></div>
-        <div id="simu-badges" class="carte" style="padding:8px 10px"></div>
+        <div id="simu-badges" class="simu-badges"></div>
         <div id="simu-labels-ticket" class="chips"></div>
-        <p class="info">Labels du ticket — n'y mets un label que s'il vaut pour TOUT.</p>
+        <p id="simu-labels-info" class="info">Labels du ticket — n'y mets un label que s'il vaut pour TOUT.</p>
+        <div id="simu-aide" class="info aide-ticket" hidden>
+          <strong>Comment utiliser ce ticket</strong>
+          <p>Déplace une ligne avec sa poignée ⠿ pour changer sa catégorie, ou touche-la pour choisir catégorie et labels. Un label de ticket s’applique à toutes les lignes ; un label posé sur une ligne ne concerne que celle-ci.</p>
+          <button id="simu-aide-fermer" type="button" class="bouton secondaire">Compris</button>
+        </div>
 
         <!-- Sélecteur : uniquement les catégories existantes (mode création/édition) -->
         <div id="simu-picker" class="carte" hidden>
           <p class="info">Catégorie pour « <strong id="simu-picker-label"></strong> »</p>
           <div id="simu-picker-liste" class="chips"></div>
-          <p class="info">Labels de cette ligne (multi).</p>
+          <p id="simu-picker-labels-info" class="info">Labels de cette ligne (multi).</p>
           <div id="simu-picker-labels" class="chips"></div>
           <button id="simu-picker-fermer" class="bouton secondaire">Annuler</button>
         </div>
