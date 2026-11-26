@@ -15,6 +15,12 @@ const CLE_CATEGORIES     = 'pp_categories';
 const CLE_DERNIER_EXPORT = 'pp_dernier_export';
 const CLE_PREF_MOIS      = 'pp_pref_mois';
 const CLE_TICKETS        = 'pp_tickets';
+const CLE_LABELS         = 'pp_labels';
+
+// Palette attribuée dans l'ordre de création : rouge d'abord (Évitable),
+// vert ensuite (BIO)… modificable ici dans le code.
+const PALETTE_LABELS = ['#e53935', '#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00acc1'];
+const LABELS_DEPART = ['Évitable', 'BIO'];
 
 // Groupes de catégories (fixe dans le prototype — modifiable ici dans le code).
 const GROUPES = ['Alimentation', 'Restaurants', 'Vices payés', 'Transport', 'Maison', 'Santé', 'Loisirs', 'Autre'];
@@ -47,11 +53,6 @@ const CATEGORIES_DEPART = [
   { nom: 'Divers',               groupe: 'Autre' },
 ];
 
-// Préférence « mois calendaire / glissant ». Défaut : calendaire.
-function prefMois() {
-  return localStorage.getItem(CLE_PREF_MOIS) === 'glissant' ? 'glissant' : 'calendaire';
-};
-
 /* ---------- 2. ÉTAT (les "temp-tables" du prototype) ---------- */
 
 // Convention importante : les montants sont stockés en CENTIMES (entiers),
@@ -64,6 +65,8 @@ let editionEnCours  = null;  // id de la dépense en cours de modification (sino
 let tickets = [];              // { id, magasin, date, lignes, source, creeLe }
 let simuTicketEnEdition = null; // id du ticket affiché (null = nouveau)
 let simuMode = 'creation';      // 'creation' | 'consultation' | 'edition'
+let labels = [];       // { id, nom, couleur, archivee }
+let simuLabels = [];   // labels posés sur le ticket EN COURS de création/édition
 
 /* ---------- 3. OUTILS GÉNÉRAUX ---------- */
 
@@ -71,6 +74,11 @@ function nouvelId() {
   // Date.now() garantit l'ordre chronologique, le hasard évite les collisions.
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 }
+
+// Préférence « mois calendaire / glissant ». Défaut : calendaire.
+function prefMois() {
+  return localStorage.getItem(CLE_PREF_MOIS) === 'glissant' ? 'glissant' : 'calendaire';
+};
 
 // Ajoute un zéro devant si nécessaire : 7 → '07'. Les mois et jours
 // doivent tenir sur 2 chiffres pour que les dates 'AAAA-MM-JJ' se
@@ -171,6 +179,32 @@ function categorieParId(id) {
   return categories.find((c) => c.id === id);
 }
 
+function labelParId(id) { return labels.find((x) => x.id === id); }
+
+// État des labels pour un ticket : plein (sur le ticket) ou partiel (≥ 1 ligne).
+// On parcoure TOUS les labels (archivés compris) : une référence passée doit
+// continuer à s'afficher.
+function etatLabelsTicket(labelsTicket, lignes) {
+  const resultats = [];
+  for (const lb of labels) {
+    const complet = (labelsTicket || []).includes(lb.id);
+    const partiel = !complet && lignes.some((l) => (l.labels || []).includes(lb.id));
+    if (!complet && !partiel) continue;
+    resultats.push({ nom: lb.nom, couleur: lb.couleur || '#9e9e9e', complet });
+  }
+  return resultats;
+}
+
+// Fabrique un badge (span) dans l'etat voulu.
+function creerBadge(texteCouleur, e) {
+  const b = document.createElement('span');
+  b.className = 'badge ' + (e.complet ? 'plein' : 'partiel');
+  if (e.complet) { b.style.background = e.couleur; b.style.borderColor = e.couleur; }
+  else { b.style.color = e.couleur; b.style.borderColor = e.couleur; }
+  b.textContent = e.nom;
+  return b;
+}
+
 /* ---------- 4. PERSISTANCE (localStorage) ---------- */
 
 function chargerDepuisStockage() {
@@ -180,6 +214,13 @@ function chargerDepuisStockage() {
   catch { categories = []; }
   try { tickets = JSON.parse(localStorage.getItem(CLE_TICKETS)) ?? []; }
   catch { tickets = []; }
+  try { labels = JSON.parse(localStorage.getItem(CLE_LABELS)) ?? []; }
+  catch { labels = []; }
+  if (labels.length === 0) {
+    labels = LABELS_DEPART.map((nom, i) => ({
+      id: nouvelId(), nom, couleur: PALETTE_LABELS[i % PALETTE_LABELS.length], archivee: false,
+    }));
+  }
 
   // Premier lancement : on sème les catégories de départ.
   if (categories.length === 0) {
@@ -193,6 +234,7 @@ function sauvegarder() {
   localStorage.setItem(CLE_DEPENSES, JSON.stringify(depenses));
   localStorage.setItem(CLE_CATEGORIES, JSON.stringify(categories));
   localStorage.setItem(CLE_TICKETS, JSON.stringify(tickets));
+  localStorage.setItem(CLE_LABELS, JSON.stringify(labels));
 }
 
 /* ---------- 5. TOAST (message éphémère en bas d'écran) ---------- */
@@ -426,6 +468,9 @@ function construireLigneTicket(t) {
 
   const quoi = document.createElement('div');
   quoi.className = 'quoi';
+  for (const e of etatLabelsTicket(t.labels, t.lignes)) {
+    quoi.appendChild(creerBadge(t.nom, e));
+  }
   const nom = document.createElement('span');
   nom.textContent = '🧾 ' + t.magasin;
   const jour = new Date(t.date + 'T12:00:00')
@@ -702,6 +747,50 @@ function construireLigneCategorie(c) {
   return ligne;
 }
 
+function rendreListeLabels() {
+  const conteneur = $('liste-labels');
+  conteneur.innerHTML = '';
+  for (const lb of labels) {
+    const ligne = document.createElement('div');
+    ligne.className = 'categorie-ligne' + (lb.archivee ? ' archivee' : '');
+
+    const point = document.createElement('span');
+    point.className = 'point';
+    point.style.background = lb.couleur;
+
+    const nom = document.createElement('span');
+    nom.textContent = lb.nom;
+
+    const boutons = document.createElement('div');
+    boutons.className = 'boutons';
+
+    const renommer = document.createElement('button');
+    renommer.textContent = '✏️';
+    renommer.addEventListener('click', () => {
+      const nouveau = (prompt('Nouveau nom :', lb.nom) || '').trim();
+      if (!nouveau || categories.concat(labels).some(
+        (x) => x.id !== lb.id && normaliser(x.nom) === normaliser(nouveau))) return;
+      lb.nom = nouveau;
+      sauvegarder();
+      rendreListeLabels();
+    });
+    const archiver = document.createElement('button');
+    archiver.textContent = lb.archivee ? '↩️' : '📦';
+    archiver.addEventListener('click', () => {
+      lb.archivee = !lb.archivee;
+      sauvegarder();
+      rendreListeLabels();
+    });
+    boutons.appendChild(renommer);
+    boutons.appendChild(archiver);
+
+    ligne.appendChild(point);
+    ligne.appendChild(nom);
+    ligne.appendChild(boutons);
+    conteneur.appendChild(ligne);
+  }
+}
+
 function rendreReglages() {
   const conteneur = $('liste-categories');
   conteneur.innerHTML = '';
@@ -714,6 +803,7 @@ function rendreReglages() {
     conteneur.appendChild(titre);
     for (const c of duGroupe) conteneur.appendChild(construireLigneCategorie(c));
   }
+  rendreListeLabels();
   rendreInfoExport();
 }
 
@@ -845,6 +935,7 @@ function installerJeuDeTest() {
   localStorage.removeItem(CLE_CATEGORIES);
   localStorage.removeItem(CLE_DERNIER_EXPORT);
   localStorage.removeItem(CLE_TICKETS);
+  localStorage.removeItem(CLE_LABELS);
    
   chargerDepuisStockage();      // recrée les catégories de départ
   categorieChoisie = null;
@@ -974,17 +1065,19 @@ function genererTicketSimule() {
   const t = TICKETS_SIMU[Math.floor(Math.random() * TICKETS_SIMU.length)];
   simuMagasin = t.magasin;
   simuLignes = t.lignes.map(([label, cents]) => {
-    let catId = null; // pas reconnu par défaut → bac « Non catégorisé »
+    let catId = null;
     const regle = REGLES_SIMU.find((r) =>
-      new RegExp(r.mot).test(label)
-      && categories.some((c) => c.nom === r.cat)
-    );
+      new RegExp(r.mot).test(label) && categories.some((c) => c.nom === r.cat));
     if (regle) {
       const c = categories.find((x) => x.nom === regle.cat);
       if (c) catId = c.id;
     }
-    return { id: nouvelId(), label, cents, catId };
+    const l = { id: nouvelId(), label, cents, catId, labels: [] };
+    const bio = labels.find((x) => /bio/i.test(x.nom));
+    if (bio && /\bBIO\b/i.test(label)) l.labels.push(bio.id);
+    return l;
   });
+  simuLabels = [];
 }
 
 // Construit tous les groupes de dépôt (dont le bac « Non catégorisé »),
@@ -1003,6 +1096,34 @@ function rendreSimulation() {
   $('bouton-simu-modifier').hidden = (simuMode !== 'consultation');
   $('bouton-simu-supprimer').hidden = (simuMode !== 'consultation');
   $('bouton-simu-abandonner').textContent = simuMode === 'consultation' ? 'Retour' : 'Abandonner';
+
+     // — Badges d'état dans le titre (visu permanente demandée)
+  const badges = etatLabelsTicket(simuLabels, simuLignes);
+  const zoneBadge = $('simu-badges');
+  zoneBadge.innerHTML = '';
+  for (const e of badges) zoneBadge.appendChild(creerBadge(null, e));
+
+  // — Rangée des labels du ticket (création/édition seulement)
+  const rangée = $('simu-labels-ticket');
+  rangée.innerHTML = '';
+  rangée.hidden = (simuMode === 'consultation');
+  if (!rangée.hidden) {
+    for (const lb of labels.filter((x) => !x.archivee)) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip' + (simuLabels.includes(lb.id) ? ' choisie' : '');
+      chip.textContent = lb.nom;
+      chip.style.borderColor = lb.couleur || '#9e9e9e';
+      if (simuLabels.includes(lb.id)) chip.style.background = lb.couleur;
+      chip.addEventListener('click', () => {
+        simuLabels = simuLabels.includes(lb.id)
+          ? simuLabels.filter((x) => x !== lb.id)
+          : [...simuLabels, lb.id];
+        rendreSimulation();
+      });
+      rangée.appendChild(chip);
+    }
+  }
 
   const zones = [];
   zones.push({ id: '', nom: '❓ Non catégorisé' });
@@ -1060,6 +1181,17 @@ function construireLigneSimu(l) {
   const prix = document.createElement('span');
   prix.className = 'prix';
   prix.textContent = formaterEuros(l.cents);
+
+  // Mini-étiquettes des labels posés sur cette ligne.
+  for (const idLbl of (l.labels || [])) {
+    const lb = labelParId(idLbl);
+    if (!lb) continue;
+    const mini = document.createElement('span');
+    mini.className = 'mini-label';
+    mini.style.background = lb.couleur || '#9e9e9e';
+    mini.textContent = lb.nom;
+    ligne.appendChild(mini);
+  }
 
   ligne.appendChild(poignee);
   ligne.appendChild(label);
@@ -1143,6 +1275,23 @@ function ouvrirPicker(l) {
     retirer.addEventListener('click', () => { l.catId = null; fermerPicker(); rendreSimulation(); });
     liste.appendChild(retirer);
   }
+     const rangéeLabels = $('simu-picker-labels');
+  rangéeLabels.innerHTML = '';
+  for (const lb of labels.filter((x) => !x.archivee)) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    // ^ opérateur : la ternaire s'applique au className — garde-le comme ci-dessous
+    chip.className = 'chip' + ((l.labels || []).includes(lb.id) ? ' choisie' : '');
+    chip.textContent = lb.nom;
+    chip.addEventListener('click', () => {
+      l.labels = (l.labels || []).includes(lb.id)
+        ? l.labels.filter((x) => x !== lb.id)
+        : [...(l.labels || []), lb.id];
+      rendreSimulation();
+      ouvrirPicker(l); // reste ouvert : plusieurs labels possibles
+    });
+    rangéeLabels.appendChild(chip);
+  }
   $('simu-picker').hidden = false;
   $('simu-picker').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -1171,8 +1320,10 @@ function validerTicketSimule() {
     depenses = depenses.filter((d) => d.ticketId !== simuTicketEnEdition);
     t.magasin = simuMagasin;
     t.lignes = simuLignes;
+    t.labels = simuLabels;
   } else {
     const t = { id: nouvelId(), magasin: simuMagasin, date: dateLocale(),
+                lignes: simuLignes, labels: simuLabels,
                 lignes: simuLignes, source: 'test', creeLe: new Date().toISOString() };
     tickets.push(t);
     simuTicketEnEdition = t.id;
@@ -1200,7 +1351,12 @@ function ouvrirFicheTicket(id, mode = 'consultation') {
   simuTicketEnEdition = id;
   simuMode = mode;
   simuMagasin = t.magasin;
-  simuLignes = t.lignes.map((l) => ({ ...l }));
+  simuLabels = (t.labels || []).slice();
+  simuLignes = t.lignes.map((l) => ({
+    id: l.id, label: l.label, cents: l.cents,
+    catId: l.catId ?? null,
+    labels: (l.labels || []).slice(),
+  }));
   fermerPicker();
   afficherOnglet('simulation');
 }
@@ -1283,6 +1439,22 @@ function demarrer() {
     rendreChips();
     rendreReglages();
     montrerToast('Catégorie ajoutée ✔');
+  });
+
+  // — Labels
+  $('form-label').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nom = $('champ-nom-label').value.trim();
+    if (!nom || labels.concat(categories).some((x) => normaliser(x.nom) === normaliser(nom))) return;
+    labels.push({
+      id: nouvelId(), nom,
+      couleur: PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
+      archivee: false,
+    });
+    sauvegarder();
+    $('champ-nom-label').value = '';
+    rendreListeLabels();
+    montrerToast('Label ajouté ✔');
   });
 
   // — Sauvegarde / restauration
@@ -1384,6 +1556,7 @@ function demarrer() {
   rendreBilan();
   rendreReglages();
   rendreInfoExport();
+  rendreListeLabels();
 }
 
 demarrer();
