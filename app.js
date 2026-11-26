@@ -1324,7 +1324,7 @@ function validerTicketSimule() {
   } else {
     const t = { id: nouvelId(), magasin: simuMagasin, date: dateLocale(),
                 lignes: simuLignes, labels: simuLabels,
-                lignes: simuLignes, source: 'test', creeLe: new Date().toISOString() };
+                source: 'test', creeLe: new Date().toISOString() };
     tickets.push(t);
     simuTicketEnEdition = t.id;
   }
