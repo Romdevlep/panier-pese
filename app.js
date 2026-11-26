@@ -623,6 +623,137 @@ async function importerJSON(fichier) {
   }
 }
 
+/* =====================================================================
+   11-bis. JEU DE DONNÉES DE TEST
+   Outils de développement — À RETIRER en version finale (ne pas porter
+   cette section en phase D). Marqués en base par source: 'test'.
+   ===================================================================== */
+
+// Générateur pseudo-aléatoire à graine : chaque installation produit
+// EXACTEMENT le même jeu de données (utile pour comparer deux exports).
+// Change 20261126 → tu obtiens un autre jeu, également reproductible.
+function rngDepuisGraine(entier) {
+  let etat = entier;
+  return function () {
+    etat |= 0;
+    etat = (etat + 0x6D2B79F5) | 0;
+    let t = Math.imul(etat ^ (etat >>> 15), 1 | etat);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Profils d'achat : poids (fréquence), fourchette de prix (€), notes
+// plausibles — avec accents, pour tester la recherche insensible
+// aux accents ('intermarche' doit trouver 'Intermarché').
+const PROFILS_TEST = [
+  { nom: 'Produits bruts',    poids: 26, min: 2,   max: 15, notes: ['Marché du samedi', 'Primeur', 'Boucherie du centre'] },
+  { nom: 'Ultra-transformés', poids: 22, min: 1.5, max: 12, notes: ['Intermarché', 'Carrefour City', 'Lidl'] },
+  { nom: 'Épicerie',          poids: 16, min: 5,   max: 40, notes: ['Courses du mois', 'Grand Frais', 'Super U'] },
+  { nom: 'Restaurant',        poids: 7,  min: 15,  max: 60, notes: ['Le Comptoir', 'Pizzeria du coin', 'Brasserie du théâtre'] },
+  { nom: 'Fast-food',         poids: 5,  min: 6,   max: 18, notes: ['McDonald’s', 'Burger King', 'O’Tacos'] },
+  { nom: 'Café / bar',        poids: 4,  min: 2,   max: 9,  notes: ['Café de la place', 'Bar de la gare'] },
+  { nom: 'Alcool',            poids: 4,  min: 3,   max: 25, notes: ['Caves du centre', 'Brasserie locale'] },
+  { nom: 'Tabac',             poids: 7,  min: 7,   max: 12, notes: ['Bureau de tabac', 'Tabac presse de la mairie'] },
+  { nom: 'Carburant',         poids: 4,  min: 30,  max: 90, notes: ['Total Énergies', 'Avia'] },
+  { nom: 'Transports en commun', poids: 5, min: 2, max: 15, notes: ['Réseau urbain', 'SNCF'] },
+  { nom: 'Pharmacie',         poids: 3,  min: 4,   max: 45, notes: ['Pharmacie Centrale'] },
+  { nom: 'Loisirs',           poids: 3,  min: 5,   max: 30, notes: ['Cinéma Le Palace', 'Médiathèque'] },
+  { nom: 'Maison',            poids: 2,  min: 8,   max: 70, notes: ['Bricolage', 'Jardinerie'] },
+  { nom: 'Divers',            poids: 2,  min: 3,   max: 50, notes: [] },
+];
+
+function installerJeuDeTest() {
+  if (!confirm('Installer le jeu de test ?\n\nEfface d’abord TOUTES les données actuelles (dépenses + catégories), puis installe ~150 dépenses fictives sur 6 mois.')) return;
+
+  // 1. Table rase (mêmes clés que la réinitialisation complète).
+  localStorage.removeItem(CLE_DEPENSES);
+  localStorage.removeItem(CLE_CATEGORIES);
+  localStorage.removeItem(CLE_DERNIER_EXPORT);
+  chargerDepuisStockage();      // recrée les catégories de départ
+  categorieChoisie = null;
+
+  const rng = rngDepuisGraine(20261126);
+  const totalPoids = PROFILS_TEST.reduce((s, p) => s + p.poids, 0);
+
+  // Choix pondéré d'un profil : le tirage respecte les poids.
+  const piocherProfil = () => {
+    let r = rng() * totalPoids;
+    for (const p of PROFILS_TEST) { r -= p.poids; if (r < 0) return p; }
+    return PROFILS_TEST[0];
+  };
+  const profilParNom = (nom) => PROFILS_TEST.find((p) => p.nom === nom) || PROFILS_TEST[0];
+
+  // Résolution : nom de profil → id de catégorie réelle.
+  // (Si la catégorie a été renommée ou supprimée : repli sur une catégorie active.)
+  const idCategorie = () => {
+    const p = piocherProfil();
+    const c = categories.find((x) => x.nom === p.nom && !x.archivee)
+           || categories.find((x) => !x.archivee);
+    return { profil: p, categorieId: c ? c.id : null };
+  };
+
+  // Une dépense fait au plus 4 chiffres : montants en centimes, comme en vrai.
+  const centimes = (p) => Math.round((p.min + rng() * (p.max - p.min)) * 100);
+  const creer = (quand, heure, minute) => {
+    const { profil, categorieId } = idCategorie();
+    const notes = profil.notes;
+    return {
+      id: nouvelId(),
+      date: dateLocale(quand),
+      montant: centimes(profil),
+      categorieId,
+      // 15 % sans note : ce cas doit exister dans les données aussi.
+      note: (notes.length && rng() > 0.15) ? notes[Math.floor(rng() * notes.length)] : '',
+      source: 'test',
+      creeLe: new Date(quand.getFullYear(), quand.getMonth(), quand.getDate(), heure, minute).toISOString(),
+    };
+  };
+
+  // 2. Six mois d'historique : plus dense à mesure qu'on approche d'aujourd'hui.
+  const AUJOURDHUI = new Date();
+  const COMPTES = [34, 30, 26, 22, 18, 14]; // mois courant → 5 mois en arrière
+  for (let i = 0; i < COMPTES.length; i++) {
+    const premier = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
+    const dernierJour = (i === 0)
+      ? AUJOURDHUI.getDate()                                   // mois en cours : pas de futur
+      : new Date(premier.getFullYear(), premier.getMonth() + 1, 0).getDate();
+    for (let n = 0; n < COMPTES[i]; n++) {
+      const jour = 1 + Math.floor(rng() * dernierJour);
+      depenses.push(creer(
+        new Date(premier.getFullYear(), premier.getMonth(), jour),
+        8 + Math.floor(rng() * 13), Math.floor(rng() * 60)      // entre 8h et 20h
+      ));
+    }
+  }
+
+  // 3. Un cas délibéré : deux achats le même jour, à 4 minutes d'écart —
+  //    vérifie le tri intra-journée de l'historique (12:07 doit précéder 12:03).
+  const hier = new Date(AUJOURDHUI); hier.setDate(hier.getDate() - 1);
+  depenses.push(creer(hier, 12, 3));
+  depenses.push(creer(hier, 12, 7));
+
+  sauvegarder();
+  rafraichirTout();
+  afficherOnglet('historique');
+  montrerToast(depenses.length + ' dépenses de test installées ✔');
+}
+
+// Retire UNIQUEMENT les enregistrements marqués source: 'test' :
+// les vraies données éventuelles sont préservées.
+function purgerDonneesTest() {
+  const avant = depenses.length;
+  depenses = depenses.filter((d) => d.source !== 'test');
+  if (avant === depenses.length) { montrerToast('Aucune donnée de test à retirer'); return; }
+  sauvegarder();
+  afficherTotalMois();
+  rendreHistorique();
+  rendreBilan();
+  montrerToast((avant - depenses.length) + ' dépenses de test retirées');
+}
+
+/* ====== fin outils de test — À RETIRER ====== */
+
 /* ---------- 12. DÉMARRAGE : câblage des événements + premier rendu ---------- */
 
 function rafraichirTout() {
@@ -721,6 +852,10 @@ function demarrer() {
     terminerEdition(false);
     montrerToast('Données effacées — catégories de départ recréées');
   });
+
+  // — Outils de test (À RETIRER en version finale)
+  $('bouton-jeu-test').addEventListener('click', installerJeuDeTest);
+  $('bouton-purge-test').addEventListener('click', purgerDonneesTest);
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
