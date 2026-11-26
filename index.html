@@ -118,6 +118,21 @@
       </div>
 
       <div class="carte">
+        <h2>Labels</h2>
+        <p class="info">Un trait indépendant de la catégorie (BIO, Évitable…),
+          posé sur tout le ticket ou sur une ligne.</p>
+        <div id="liste-labels"></div>
+        <details>
+          <summary>Ajouter un label</summary>
+          <form id="form-label">
+            <label for="champ-nom-label">Nom</label>
+            <input id="champ-nom-label" type="text" maxlength="30" required>
+            <button type="submit" class="bouton">Ajouter</button>
+          </form>
+        </details>
+      </div>
+
+      <div class="carte">
         <h2>Sauvegarde</h2>
         <p id="info-export" class="info"></p>
         <button id="bouton-export-json" class="bouton">Exporter tout (JSON)</button>
