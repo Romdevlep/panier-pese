@@ -154,21 +154,23 @@
     </section>
 
     <!-- ============ ONGLET (hors nav) : SIMULATION TICKET V2 ============ -->
-    <section id="onglet-simulation" hidden>
+        <section id="onglet-simulation" hidden>
       <div class="carte">
         <h2 id="simu-titre">Ticket simulé</h2>
-        <p class="info">Glisse chaque ligne dans la bonne catégorie.
-          Les lignes non reconnues par le moteur attendent dans « Non catégorisé ».</p>
+        <p id="simu-info" class="info"></p>
         <div id="simu-groupes"></div>
-        <!-- Sélecteur : UNIQUEMENT les catégories existantes, zéro saisie -->
-      <div id="simu-picker" class="carte" hidden>
-        <p class="info">Catégorie pour « <strong id="simu-picker-label"></strong> »</p>
-        <div id="simu-picker-liste" class="chips"></div>
-        <button id="simu-picker-fermer" class="bouton secondaire">Annuler</button>
-      </div>
-      <p class="info">Une catégorie manque vraiment ? Crée-la dans l'onglet Réglages.</p>
+
+        <!-- Sélecteur : uniquement les catégories existantes (mode création/édition) -->
+        <div id="simu-picker" class="carte" hidden>
+          <p class="info">Catégorie pour « <strong id="simu-picker-label"></strong> »</p>
+          <div id="simu-picker-liste" class="chips"></div>
+          <button id="simu-picker-fermer" class="bouton secondaire">Annuler</button>
+        </div>
+
         <button id="bouton-simu-valider" class="bouton">Valider le ticket</button>
-        <button id="bouton-simu-abandonner" class="bouton secondaire">Abandonner</button>
+        <button id="bouton-simu-modifier" class="bouton" hidden>✏️ Modifier ce ticket</button>
+        <button id="bouton-simu-supprimer" class="bouton danger" hidden>🗑️ Supprimer ce ticket</button>
+        <button id="bouton-simu-abandonner" class="bouton secondaire">Retour</button>
       </div>
     </section>
 
