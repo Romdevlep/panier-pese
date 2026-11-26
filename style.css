@@ -1,0 +1,143 @@
+/* Panier Pesé — feuille de style du prototype. Mobile d'abord. */
+
+:root {
+  --vert: #2e7d32;
+  --vert-clair: #c8e6c9;
+  --fond: #f4f6f4;
+  --carte: #ffffff;
+  --bord: #e3e7e3;
+  --texte: #1b1e1b;
+  --texte-secondaire: #6b706b;
+  --rouge: #e53935;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--fond);
+  color: var(--texte);
+}
+
+header, nav, main { max-width: 480px; margin: 0 auto; }
+
+header { padding: 16px 16px 8px; }
+header h1 { margin: 0; font-size: 1.4rem; }
+.total-mois { margin: 4px 0 0; color: var(--texte-secondaire); font-size: 0.95rem; }
+
+/* Barre d'onglets, collée en haut au défilement */
+nav {
+  display: flex; gap: 4px;
+  padding: 8px 16px;
+  position: sticky; top: 0;
+  background: var(--fond);
+  z-index: 10;
+}
+nav button {
+  flex: 1; padding: 10px 0;
+  border: 1px solid transparent; border-radius: 10px;
+  background: transparent; color: var(--texte-secondaire);
+  font-size: 0.95rem;
+}
+nav button.actif {
+  background: var(--carte); border-color: var(--vert-clair);
+  color: var(--vert); font-weight: 600;
+}
+
+main { padding: 8px 16px 48px; }
+
+.carte {
+  background: var(--carte); border: 1px solid var(--bord);
+  border-radius: 12px; padding: 14px; margin-bottom: 14px;
+}
+.carte h2 { margin: 0 0 10px; font-size: 1.05rem; }
+.carte h3 { margin: 14px 0 4px; font-size: 0.9rem; color: var(--texte-secondaire); }
+
+/* ---------- Formulaires ---------- */
+label { display: block; margin: 12px 0 4px; font-size: 0.9rem; color: var(--texte-secondaire); }
+input, select {
+  width: 100%; padding: 12px; font-size: 1.05rem;
+  border: 1px solid #cbd2cb; border-radius: 10px;
+  background: var(--carte); color: var(--texte);
+}
+input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--vert); }
+
+/* ---------- Boutons ---------- */
+.bouton {
+  display: block; width: 100%; margin-top: 14px; padding: 13px;
+  font-size: 1.05rem; font-weight: 600;
+  background: var(--vert); color: #fff;
+  border: 0; border-radius: 10px;
+}
+.bouton.secondaire { background: transparent; color: var(--texte-secondaire); border: 1px solid #cbd2cb; }
+.bouton.danger { background: transparent; color: var(--rouge); border: 1px solid var(--rouge); }
+
+/* ---------- Chips de saisie express ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; padding: 0; }
+.chip {
+  padding: 8px 12px; border-radius: 999px;
+  border: 1px solid #cbd2cb; background: var(--carte);
+  font-size: 0.9rem;
+}
+.chip.choisie { background: var(--vert); color: #fff; border-color: var(--vert); }
+
+/* ---------- Historique ---------- */
+.titre-mois {
+  margin: 16px 0 6px; font-size: 0.9rem; font-weight: 600;
+  color: var(--texte-secondaire); text-transform: capitalize;
+}
+.ligne-depense {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--carte); border: 1px solid var(--bord);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
+}
+.ligne-depense .point { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.ligne-depense .quoi { flex: 1; min-width: 0; }
+.ligne-depense .quoi small {
+  display: block; color: var(--texte-secondaire);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ligne-depense .montant { font-weight: 600; }
+.ligne-depense .actions { display: flex; }
+.ligne-depense .actions button {
+  border: 0; background: transparent; font-size: 1rem; padding: 6px;
+}
+.vide { color: var(--texte-secondaire); }
+
+/* ---------- Bilan (barres en CSS pur, sans lib de graphiques) ---------- */
+.bilan-ligne { margin: 10px 0; }
+.bilan-libelle {
+  display: flex; justify-content: space-between;
+  font-size: 0.9rem; margin-bottom: 3px;
+}
+.barre { height: 10px; background: #e8ece8; border-radius: 6px; overflow: hidden; }
+.barre-remplie { height: 100%; border-radius: 6px; }
+.mois-actuel { font-weight: 600; }
+
+/* ---------- Réglages : catégories ---------- */
+.categorie-ligne {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid #eef1ee; font-size: 0.95rem;
+}
+.categorie-ligne .point { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.categorie-ligne .boutons { margin-left: auto; display: flex; }
+.categorie-ligne .boutons button {
+  border: 0; background: transparent; padding: 6px; font-size: 1rem;
+}
+.categorie-ligne.archivee { opacity: 0.5; }
+.tag {
+  font-size: 0.75rem; border: 1px solid #cbd2cb; border-radius: 999px;
+  padding: 1px 8px; color: var(--texte-secondaire);
+}
+
+/* ---------- Toast (message éphémère) ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: 24px;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--texte); color: #fff;
+  padding: 10px 16px; border-radius: 999px; font-size: 0.9rem;
+  opacity: 0; pointer-events: none; transition: all 0.25s;
+  max-width: 90%; z-index: 50;
+}
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
