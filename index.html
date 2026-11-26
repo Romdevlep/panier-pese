@@ -160,16 +160,13 @@
         <p class="info">Glisse chaque ligne dans la bonne catégorie.
           Les lignes non reconnues par le moteur attendent dans « Non catégorisé ».</p>
         <div id="simu-groupes"></div>
-        <details id="simu-nouvelle-categorie">
-          <summary>+ Ajouter une catégorie manquante</summary>
-          <form id="form-simu-categorie">
-            <label for="simu-nom-categorie">Nom</label>
-            <input id="simu-nom-categorie" type="text" maxlength="40" required>
-            <label for="simu-groupe-categorie">Groupe</label>
-            <select id="simu-groupe-categorie"></select>
-            <button type="submit" class="bouton">Créer puis catégoriser</button>
-          </form>
-        </details>
+        <!-- Sélecteur : UNIQUEMENT les catégories existantes, zéro saisie -->
+      <div id="simu-picker" class="carte" hidden>
+        <p class="info">Catégorie pour « <strong id="simu-picker-label"></strong> »</p>
+        <div id="simu-picker-liste" class="chips"></div>
+        <button id="simu-picker-fermer" class="bouton secondaire">Annuler</button>
+      </div>
+      <p class="info">Une catégorie manque vraiment ? Crée-la dans l'onglet Réglages.</p>
         <button id="bouton-simu-valider" class="bouton">Valider le ticket</button>
         <button id="bouton-simu-abandonner" class="bouton secondaire">Abandonner</button>
       </div>
