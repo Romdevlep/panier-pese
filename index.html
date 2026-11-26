@@ -28,8 +28,14 @@
     <section id="onglet-saisir">
       <form id="form-depense" class="carte">
 
-        <!-- id caché : rempli uniquement quand on MODIFIE une dépense existante -->
+        <!-- id caché : rempli uniquement quand on modifie une opération existante -->
         <input type="hidden" id="champ-id">
+
+        <label for="select-type-operation">Type d’opération</label>
+        <select id="select-type-operation">
+          <option value="depense">Dépense</option>
+          <option value="revenu">Rentrée d’argent</option>
+        </select>
 
         <label for="champ-montant">Montant (€)</label>
         <!-- inputmode="decimal" → clavier numérique sur Android -->
@@ -39,7 +45,7 @@
         <!-- Chips : les catégories les plus utilisées, en un tap -->
         <p id="chips-categories" class="chips"></p>
 
-        <label for="champ-categorie">Catégorie</label>
+        <label id="libelle-categorie-form" for="champ-categorie">Catégorie de dépense</label>
         <select id="champ-categorie" required></select>
 
         <label for="champ-date">Date</label>
@@ -93,6 +99,7 @@
         </div>
 
         <p id="libelle-periode" class="libelle-periode"></p>
+        <div id="bilan-resume" class="bilan-resume"></div>
       </div>
 
       <label for="select-bilan-dimension">Répartition</label>
@@ -142,6 +149,48 @@
       </div>
 
       <div class="carte">
+        <h2>Catégories de revenus</h2>
+        <div id="liste-categories-revenus"></div>
+        <form id="form-categorie-revenu">
+          <label for="champ-nom-categorie-revenu">Ajouter une catégorie</label>
+          <input id="champ-nom-categorie-revenu" type="text" maxlength="40" required>
+          <button type="submit" class="bouton secondaire">Ajouter</button>
+        </form>
+      </div>
+
+      <div class="carte">
+        <h2>Abonnements</h2>
+        <p class="info">Les prochaines échéances sont prévisionnelles. Confirme-les lorsqu’elles arrivent pour les enregistrer dans l’historique.</p>
+        <div id="liste-abonnements"></div>
+        <details>
+          <summary>Ajouter un abonnement</summary>
+          <form id="form-abonnement">
+            <label for="champ-nom-abonnement">Nom</label>
+            <input id="champ-nom-abonnement" type="text" maxlength="60" required>
+            <label for="select-type-abonnement">Type</label>
+            <select id="select-type-abonnement">
+              <option value="depense">Dépense</option>
+              <option value="revenu">Rentrée d’argent</option>
+            </select>
+            <label for="champ-montant-abonnement">Montant (€)</label>
+            <input id="champ-montant-abonnement" type="number" inputmode="decimal"
+                   step="0.01" min="0" placeholder="0,00" required>
+            <label for="select-categorie-abonnement">Catégorie</label>
+            <select id="select-categorie-abonnement" required></select>
+            <label for="select-frequence-abonnement">Fréquence</label>
+            <select id="select-frequence-abonnement">
+              <option value="hebdomadaire">Chaque semaine</option>
+              <option value="mensuelle" selected>Chaque mois</option>
+              <option value="annuelle">Chaque année</option>
+            </select>
+            <label for="champ-date-abonnement">Prochaine échéance</label>
+            <input id="champ-date-abonnement" type="date" required>
+            <button type="submit" class="bouton">Créer l’abonnement</button>
+          </form>
+        </details>
+      </div>
+
+      <div class="carte">
         <h2>Sauvegarde</h2>
         <p id="info-export" class="info"></p>
         <button id="bouton-export-json" class="bouton">Exporter tout (JSON)</button>
@@ -164,6 +213,24 @@
         <select id="select-pref-accueil">
           <option value="saisir">Saisir</option>
           <option value="bilan">Bilan</option>
+        </select>
+        <label for="champ-solde-initial">Solde actuel de départ (€)</label>
+        <input id="champ-solde-initial" type="number" step="0.01" inputmode="decimal" value="0">
+        <label for="select-horizon-projection">Projection future</label>
+        <select id="select-horizon-projection">
+          <option value="0">0 mois</option>
+          <option value="1">1 mois</option>
+          <option value="2">2 mois</option>
+          <option value="3">3 mois</option>
+          <option value="4">4 mois</option>
+          <option value="5">5 mois</option>
+          <option value="6">6 mois</option>
+          <option value="7">7 mois</option>
+          <option value="8">8 mois</option>
+          <option value="9">9 mois</option>
+          <option value="10">10 mois</option>
+          <option value="11">11 mois</option>
+          <option value="12">12 mois</option>
         </select>
       </div>
 

@@ -18,6 +18,12 @@ const CLE_PREF_ACCUEIL   = 'pp_pref_accueil';
 const CLE_AIDE_TICKET    = 'pp_aide_ticket_vue';
 const CLE_TICKETS        = 'pp_tickets';
 const CLE_LABELS         = 'pp_labels';
+const CLE_REVENUS        = 'pp_revenus';
+const CLE_CATEGORIES_REVENUS = 'pp_categories_revenus';
+const CLE_ABONNEMENTS    = 'pp_abonnements';
+const CLE_SOLDE_INITIAL  = 'pp_solde_initial';
+const CLE_HORIZON_PROJECTION = 'pp_horizon_projection';
+const HORIZON_PAR_DEFAUT = 3;
 
 const COULEURS_CHOIX = [
   { nom: 'Vert', valeur: '#2e7d32' },
@@ -64,6 +70,7 @@ const CATEGORIES_DEPART = [
   { nom: 'Pharmacie' },
   { nom: 'Divers' },
 ];
+const CATEGORIES_REVENUS_DEPART = ['Salaire', 'Prestations', 'Remboursements', 'Autres revenus'];
 
 /* ---------- 2. ÉTAT (les "temp-tables" du prototype) ---------- */
 
@@ -71,9 +78,15 @@ const CATEGORIES_DEPART = [
 // comme dans une vraie caisse — l'addition en entiers évite les erreurs
 // d'arrondi des nombres à virgule flottante. On convertit à l'affichage.
 let depenses   = [];  // { id, date 'AAAA-MM-JJ', montant, categorieId, note, source, creeLe }
+let revenus = [];
 let categories = [];  // { id, nom, couleur, archivee } ; groupe toléré dans les anciennes données
+let categoriesRevenus = [];
+let abonnements = [];
+let soldeInitial = 0; // centimes
+let horizonProjection = HORIZON_PAR_DEFAUT;
 let categorieChoisie = null; // catégorie présélectionnée dans l'onglet Saisir
-let editionEnCours  = null;  // id de la dépense en cours de modification (sinon null)
+let editionEnCours  = null;  // id de l'opération en cours de modification (sinon null)
+let editionType = 'depense';
 let tickets = [];              // { id, magasin, date, lignes, source, creeLe }
 let simuTicketEnEdition = null; // id du ticket affiché (null = nouveau)
 let simuMode = 'creation';      // 'creation' | 'consultation' | 'edition'
@@ -110,6 +123,20 @@ function dateLocale(d = new Date()) {
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
+function dateValide(date) {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const parsed = new Date(date + 'T12:00:00');
+  return !Number.isNaN(parsed.getTime()) && dateLocale(parsed) === date;
+}
+
+function abonnementValide(a) {
+  return a && typeof a.id === 'string' && typeof a.nom === 'string' &&
+    (a.type === 'depense' || a.type === 'revenu') &&
+    Number.isSafeInteger(a.montant) && a.montant > 0 &&
+    typeof a.categorieId === 'string' && dateValide(a.prochaineDate) &&
+    ['hebdomadaire', 'mensuelle', 'annuelle'].includes(a.frequence);
+}
+
 // '2026-11' → 'novembre 2026' (le T12:00 évite un décalage de fuseau).
 function libelleMois(mois) {
   return new Date(mois + '-01T12:00:00')
@@ -144,16 +171,53 @@ function bornesMoisCourant() {
 // Somme des dépenses d'une période.
 function totalSurPeriode(bornes) {
   return depenses
-    .filter((d) => d.date >= bornes.debut && d.date <= bornes.fin)
+    .filter((d) => d.date >= bornes.debut && d.date <= bornes.fin && d.date <= dateLocale())
     .reduce((somme, d) => somme + d.montant, 0);
 }
 
-// Tous les mois de la plus ancienne dépense au mois courant (celui-ci TOUJOURS inclus,
+function revenuSurPeriode(bornes) {
+  return revenus
+    .filter((r) => r.date >= bornes.debut && r.date <= bornes.fin && r.date <= dateLocale())
+    .reduce((somme, r) => somme + r.montant, 0);
+}
+
+function formaterSolde(centimes) {
+  return (centimes > 0 ? '+' : '') + formaterEuros(centimes);
+}
+
+function ajouterMois(date, nbMois) {
+  const [annee, mois, jour] = date.split('-').map(Number);
+  const indexMois = annee * 12 + mois - 1 + nbMois;
+  const anneeCible = Math.floor(indexMois / 12);
+  const moisCible = indexMois % 12;
+  const dernierJour = new Date(anneeCible, moisCible + 1, 0).getDate();
+  return dateLocale(new Date(anneeCible, moisCible, Math.min(jour, dernierJour)));
+}
+
+function dateMaxProjection() {
+  return ajouterMois(dateLocale(), horizonProjection);
+}
+
+function dateDefautAbonnement() {
+  return ajouterMois(dateLocale(), Math.min(1, horizonProjection));
+}
+
+function categorieOperation(type, id) {
+  return (type === 'revenu' ? categoriesRevenus : categories).find((c) => c.id === id);
+}
+
+function categoriesActives(type) {
+  return (type === 'revenu' ? categoriesRevenus : categories).filter((c) => !c.archivee);
+}
+
+// Tous les mois de la plus ancienne opération réelle au mois courant (celui-ci TOUJOURS inclus,
 // même sans dépense — exigence du cahier des charges).
 function listeMoisDisponibles() {
   const courant = dateLocale().slice(0, 7);
   let plusAncien = courant;
-  for (const d of depenses) if (d.date.slice(0, 7) < plusAncien) plusAncien = d.date.slice(0, 7);
+  for (const d of depenses.concat(revenus)) {
+    if (d.date <= dateLocale() && d.date.slice(0, 7) < plusAncien) plusAncien = d.date.slice(0, 7);
+  }
   const liste = [];
   let [y, m] = plusAncien.split('-').map(Number);
   const [cy, cm] = courant.split('-').map(Number);
@@ -339,8 +403,20 @@ function creerBadge(texteCouleur, e) {
 function chargerDepuisStockage() {
   try { depenses = JSON.parse(localStorage.getItem(CLE_DEPENSES)) ?? []; }
   catch { depenses = []; }
+  try { revenus = JSON.parse(localStorage.getItem(CLE_REVENUS)) ?? []; }
+  catch { revenus = []; }
   try { categories = JSON.parse(localStorage.getItem(CLE_CATEGORIES)) ?? []; }
   catch { categories = []; }
+  try { categoriesRevenus = JSON.parse(localStorage.getItem(CLE_CATEGORIES_REVENUS)) ?? []; }
+  catch { categoriesRevenus = []; }
+  try { abonnements = (JSON.parse(localStorage.getItem(CLE_ABONNEMENTS)) ?? []).filter(abonnementValide); }
+  catch { abonnements = []; }
+  const soldeEnregistre = Number(localStorage.getItem(CLE_SOLDE_INITIAL));
+  soldeInitial = Number.isSafeInteger(soldeEnregistre) ? soldeEnregistre : 0;
+  const horizonValeur = localStorage.getItem(CLE_HORIZON_PROJECTION);
+  const horizonEnregistre = horizonValeur === null ? NaN : Number(horizonValeur);
+  horizonProjection = Number.isInteger(horizonEnregistre) && horizonEnregistre >= 0 && horizonEnregistre <= 12
+    ? horizonEnregistre : HORIZON_PAR_DEFAUT;
   try { tickets = JSON.parse(localStorage.getItem(CLE_TICKETS)) ?? []; }
   catch { tickets = []; }
   try { labels = JSON.parse(localStorage.getItem(CLE_LABELS)) ?? []; }
@@ -357,6 +433,11 @@ function chargerDepuisStockage() {
       id: nouvelId(), nom: c.nom, archivee: false,
     }));
   }
+  if (categoriesRevenus.length === 0) {
+    categoriesRevenus = CATEGORIES_REVENUS_DEPART.map((nom) => ({
+      id: nouvelId(), nom, archivee: false,
+    }));
+  }
   categories.forEach((c, i) => {
     if (!c.couleur) c.couleur = PALETTE_CATEGORIES[i % PALETTE_CATEGORIES.length];
   });
@@ -364,7 +445,12 @@ function chargerDepuisStockage() {
 
 function sauvegarder() {
   localStorage.setItem(CLE_DEPENSES, JSON.stringify(depenses));
+  localStorage.setItem(CLE_REVENUS, JSON.stringify(revenus));
   localStorage.setItem(CLE_CATEGORIES, JSON.stringify(categories));
+  localStorage.setItem(CLE_CATEGORIES_REVENUS, JSON.stringify(categoriesRevenus));
+  localStorage.setItem(CLE_ABONNEMENTS, JSON.stringify(abonnements));
+  localStorage.setItem(CLE_SOLDE_INITIAL, String(soldeInitial));
+  localStorage.setItem(CLE_HORIZON_PROJECTION, String(horizonProjection));
   localStorage.setItem(CLE_TICKETS, JSON.stringify(tickets));
   localStorage.setItem(CLE_LABELS, JSON.stringify(labels));
 }
@@ -405,7 +491,9 @@ function categoriesTrieesUtilisation() {
   const borneStr = dateLocale(borne);
   const compteur = new Map();
   for (const d of depenses) {
-    if (d.date >= borneStr) compteur.set(d.categorieId, (compteur.get(d.categorieId) ?? 0) + 1);
+    if (d.date >= borneStr && d.date <= dateLocale()) {
+      compteur.set(d.categorieId, (compteur.get(d.categorieId) ?? 0) + 1);
+    }
   }
   const actives = categories.filter((c) => !c.archivee);
   actives.sort((a, b) => (compteur.get(b.id) ?? 0) - (compteur.get(a.id) ?? 0));
@@ -445,35 +533,66 @@ function peuplerSelectCategories() {
   if (categorieChoisie) select.value = categorieChoisie;
 }
 
+function mettreAJourFormulaireType(type, categorieId) {
+  const revenu = type === 'revenu';
+  const select = $('champ-categorie');
+  $('chips-categories').hidden = revenu;
+  $('libelle-categorie-form').textContent = revenu ? 'Catégorie de revenu' : 'Catégorie de dépense';
+  if (revenu) {
+    select.innerHTML = '';
+    select.appendChild(new Option('— choisir une catégorie —', ''));
+    for (const cat of categoriesActives('revenu')) select.appendChild(new Option(cat.nom, cat.id));
+    if (categorieId) {
+      const cat = categorieOperation('revenu', categorieId);
+      if (cat && cat.archivee) select.appendChild(new Option(cat.nom + ' (archivée)', cat.id));
+      select.value = categorieId;
+    }
+    $('bouton-valider').textContent = editionEnCours ? 'Enregistrer la modification' : 'Ajouter la rentrée d’argent';
+  } else {
+    if (categorieId !== undefined) categorieChoisie = categorieId;
+    peuplerSelectCategories();
+    $('bouton-valider').textContent = editionEnCours ? 'Enregistrer la modification' : 'Ajouter la dépense';
+  }
+  $('bouton-simu-ticket').hidden = revenu || Boolean(editionEnCours);
+}
+
 // Remet le formulaire "neuf" (sans toucher à la catégorie choisie :
 // on enchaîne souvent plusieurs achats de la même catégorie).
 function terminerEdition(avecFocus) {
   editionEnCours = null;
+  editionType = 'depense';
   $('champ-id').value = '';
   $('champ-montant').value = '';
   $('champ-note').value = '';
   $('champ-date').value = dateLocale();
-  $('bouton-valider').textContent = 'Ajouter la dépense';
+  $('champ-date').max = dateMaxProjection();
+  $('select-type-operation').disabled = false;
+  $('select-type-operation').value = 'depense';
+  mettreAJourFormulaireType('depense', categorieChoisie);
   $('bouton-annuler').hidden = true;
   if (avecFocus) $('champ-montant').focus();
 }
 
-// Préremplit le formulaire pour modifier une dépense existante.
-function modifierDepense(id) {
-  const d = depenses.find((x) => x.id === id);
-  if (!d) return;
+function modifierOperation(id, type) {
+  const collection = type === 'revenu' ? revenus : depenses;
+  const operation = collection.find((x) => x.id === id);
+  if (!operation) return;
   editionEnCours = id;
-  categorieChoisie = d.categorieId;
-  peuplerSelectCategories();
+  editionType = type;
+  $('select-type-operation').value = type;
+  $('select-type-operation').disabled = true;
+  mettreAJourFormulaireType(type, operation.categorieId);
   $('champ-id').value = id;
-  $('champ-montant').value = (d.montant / 100).toFixed(2);
-  $('champ-date').value = d.date;
-  $('champ-note').value = d.note || '';
-  $('champ-categorie').value = d.categorieId;
-  $('bouton-valider').textContent = 'Enregistrer la modification';
+  $('champ-montant').value = (operation.montant / 100).toFixed(2);
+  $('champ-date').value = operation.date;
+  $('champ-date').max = dateMaxProjection();
+  $('champ-note').value = operation.note || '';
+  $('champ-categorie').value = operation.categorieId;
   $('bouton-annuler').hidden = false;
   afficherOnglet('saisir');
 }
+
+function modifierDepense(id) { modifierOperation(id, 'depense'); }
 
 // Total affiché sous le titre : suit la préférence calendaire / glissant.
 function afficherTotalMois() {
@@ -484,20 +603,25 @@ function afficherTotalMois() {
     const l = libelleMois(dateLocale().slice(0, 7));
     label += ' — ' + l.charAt(0).toUpperCase() + l.slice(1);
   }
-  $('total-mois').textContent = label + ' : ' + formaterEuros(totalSurPeriode(bornesMoisCourant()));
+  const bornes = bornesMoisCourant();
+  const depensesMois = totalSurPeriode(bornes);
+  const revenusMois = revenuSurPeriode(bornes);
+  $('total-mois').textContent = label + ' — Revenus ' + formaterEuros(revenusMois) +
+    ' · Dépenses ' + formaterEuros(depensesMois) + ' · Solde ' +
+    formaterSolde(revenusMois - depensesMois);
 }
 
 /* ---------- 8. ONGLET HISTORIQUE ---------- */
 
 // On assemble chaque ligne par createElement + textContent — jamais
 // innerHTML avec des données utilisateur (règle de sécurité).
-function construireLigneDepense(d) {
-  const cat = categorieParId(d.categorieId);
+function construireLigneOperation(d, type) {
+  const cat = categorieOperation(type, d.categorieId);
   const nomCat = cat ? cat.nom : '(catégorie supprimée)';
-  const couleur = cat ? couleurCategorie(cat) : '#9e9e9e';
+  const couleur = type === 'revenu' ? '#00897b' : cat ? couleurCategorie(cat) : '#9e9e9e';
 
   const ligne = document.createElement('div');
-  ligne.className = 'ligne-depense';
+  ligne.className = 'ligne-depense' + (d.date > dateLocale() ? ' operation-future' : '');
 
   const point = document.createElement('span');
   point.className = 'point';
@@ -510,24 +634,25 @@ function construireLigneDepense(d) {
   const jour = new Date(d.date + 'T12:00:00')
     .toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
   const info = document.createElement('small');
-  info.textContent = jour + (d.note ? ' · ' + d.note : '');
+  info.textContent = jour + (d.date > dateLocale() ? ' · À venir' : '') +
+    (d.note ? ' · ' + d.note : '');
   quoi.appendChild(nom);
   quoi.appendChild(info);
 
   const montant = document.createElement('span');
   montant.className = 'montant';
-  montant.textContent = formaterEuros(d.montant);
+  montant.textContent = (type === 'revenu' ? '+' : '−') + formaterEuros(d.montant);
 
   const actions = document.createElement('div');
   actions.className = 'actions';
   const boutonModif = document.createElement('button');
   boutonModif.textContent = '✏️';
   boutonModif.title = 'Modifier';
-  boutonModif.addEventListener('click', () => modifierDepense(d.id));
+  boutonModif.addEventListener('click', () => modifierOperation(d.id, type));
   const boutonSuppr = document.createElement('button');
   boutonSuppr.textContent = '🗑️';
   boutonSuppr.title = 'Supprimer';
-  boutonSuppr.addEventListener('click', () => supprimerDepense(d.id));
+  boutonSuppr.addEventListener('click', () => supprimerOperation(d.id, type));
   actions.appendChild(boutonModif);
   actions.appendChild(boutonSuppr);
 
@@ -538,14 +663,17 @@ function construireLigneDepense(d) {
   return ligne;
 }
 
+function construireLigneDepense(d) { return construireLigneOperation(d, 'depense'); }
+
 function rendreHistorique() {
   const recherche = normaliser($('champ-recherche').value);
   const conteneur = $('liste-depenses');
   conteneur.innerHTML = '';
 
-  // Fusion : dépenses manuelles (sans ticketId) + saisies ticket.
+  // Fusion des opérations manuelles, des tickets et des revenus.
   const entrees = [];
   for (const d of depenses) if (!d.ticketId) entrees.push({ type: 'depense', objet: d });
+  for (const r of revenus) entrees.push({ type: 'revenu', objet: r });
   for (const t of tickets)     entrees.push({ type: 'ticket',  objet: t });
   entrees.sort((a, b) => {
     const da = a.objet.date, db = b.objet.date;
@@ -556,8 +684,8 @@ function rendreHistorique() {
   let moisCourant = null;
   let trouvees = 0;
   for (const e of entrees) {
-    if (e.type === 'depense') {
-      const cat = categorieParId(e.objet.categorieId);
+    if (e.type === 'depense' || e.type === 'revenu') {
+      const cat = categorieOperation(e.type, e.objet.categorieId);
       const nomCat = cat ? cat.nom : '';
       if (recherche && !normaliser(nomCat + ' ' + (e.objet.note || '')).includes(recherche)) continue;
     } else {
@@ -572,9 +700,9 @@ function rendreHistorique() {
       titre.textContent = libelleMois(mois);
       conteneur.appendChild(titre);
     }
-    conteneur.appendChild(e.type === 'depense'
-      ? construireLigneDepense(e.objet)
-      : construireLigneTicket(e.objet));
+    conteneur.appendChild(e.type === 'ticket'
+      ? construireLigneTicket(e.objet)
+      : construireLigneOperation(e.objet, e.type));
   }
   if (trouvees === 0) {
     conteneur.innerHTML = '<p class="vide">Aucune saisie' +
@@ -618,12 +746,20 @@ function construireLigneTicket(t) {
 }
 
 function supprimerDepense(id) {
-  if (!confirm('Supprimer cette dépense ?')) return;
-  depenses = depenses.filter((d) => d.id !== id);
+  supprimerOperation(id, 'depense');
+}
+
+function supprimerOperation(id, type) {
+  const collection = type === 'revenu' ? revenus : depenses;
+  const nom = type === 'revenu' ? 'rentrée d’argent' : 'dépense';
+  if (!confirm('Supprimer cette ' + nom + ' ?')) return;
+  if (type === 'revenu') revenus = collection.filter((d) => d.id !== id);
+  else depenses = collection.filter((d) => d.id !== id);
   sauvegarder();
   afficherTotalMois();
   rendreHistorique();
-  montrerToast('Dépense supprimée');
+  rendreBilan();
+  montrerToast(type === 'revenu' ? 'Rentrée supprimée' : 'Dépense supprimée');
 }
 
 /* ---------- 9. ONGLET BILAN ---------- */
@@ -632,9 +768,11 @@ function supprimerDepense(id) {
 function construireCarteBarres(titre, lignes) {
   const carte = document.createElement('div');
   carte.className = 'carte';
-  const h2 = document.createElement('h2');
-  h2.textContent = titre;
-  carte.appendChild(h2);
+  if (titre) {
+    const h2 = document.createElement('h2');
+    h2.textContent = titre;
+    carte.appendChild(h2);
+  }
 
   const maxi = Math.max(...lignes.map((l) => l.cents), 1);
   for (const l of lignes) {
@@ -784,45 +922,35 @@ function bornesBilan() {
     case 'un-mois': return bornesMoisCalendaire(bilanMois); // un mois précis = TOUJOURS calendaire
     case 'plage':   return { debut: bilanMoisDeb + '-01', fin: bornesMoisCalendaire(bilanMoisFin).fin };
     case 'tout': {
-      // Plus ancienne dépense → aujourd'hui (ou juste aujourd'hui si vide).
+      // Plus ancienne opération → aujourd'hui (ou juste aujourd'hui si vide).
       let debut = dateLocale();
-      for (const d of depenses) if (d.date < debut) debut = d.date;
+      for (const d of depenses.concat(revenus)) {
+        if (d.date <= dateLocale() && d.date < debut) debut = d.date;
+      }
       return { debut, fin: dateLocale() };
     }
     default:        return bornesMoisCourant(); // « Ce mois-ci » suit la préférence
   }
 }
 
-function titrePeriodeBilan() {
-  switch (bilanMode) {
-    case 'un-mois': {
-      const l = libelleMois(bilanMois);
-      return l.charAt(0).toUpperCase() + l.slice(1);
-    }
-    case 'plage':   return 'Période choisie';
-    case 'tout':    return 'Depuis le début';
-    default:        return 'Ce mois-ci';
-  }
-}
-
 function totalMoisEvolution(mois) {
   if (bilanPerimetre === 'tout') {
     return depenses
-      .filter((d) => d.date.slice(0, 7) === mois)
+      .filter((d) => d.date.slice(0, 7) === mois && d.date <= dateLocale())
       .reduce((somme, d) => somme + d.montant, 0);
   }
 
   const [type, id] = bilanPerimetre.split(':');
   if (type === 'categorie') {
     return depenses
-      .filter((d) => d.categorieId === id && d.date.slice(0, 7) === mois)
+      .filter((d) => d.categorieId === id && d.date.slice(0, 7) === mois && d.date <= dateLocale())
       .reduce((somme, d) => somme + d.montant, 0);
   }
 
   if (type === 'label') {
     let total = 0;
     for (const ticket of tickets) {
-      if (ticket.date.slice(0, 7) !== mois) continue;
+      if (ticket.date.slice(0, 7) !== mois || ticket.date > dateLocale()) continue;
       for (const ligne of ticket.lignes || []) {
         if ((ticket.labels || []).includes(id) || (ligne.labels || []).includes(id)) {
           total += ligne.cents;
@@ -863,27 +991,34 @@ function rendreBilan() {
 
   const conteneur = $('bilan-contenu');
   conteneur.innerHTML = '';
+  const resume = $('bilan-resume');
+  resume.replaceChildren();
   $('select-bilan-dimension').value = bilanDimension;
   const total = totalSurPeriode(b);
+  const totalRevenus = revenuSurPeriode(b);
 
-  // — Carte du total sur la période.
-  const carteTotal = document.createElement('div');
-  carteTotal.className = 'carte';
-  const h2 = document.createElement('h2');
-  h2.textContent = titrePeriodeBilan();
-  const totalP = document.createElement('p');
-  totalP.style.cssText = 'font-size:1.6rem;font-weight:700;margin:4px 0;color:var(--vert)';
-  totalP.textContent = formaterEuros(total);
-  carteTotal.appendChild(h2);
-  carteTotal.appendChild(totalP);
-  conteneur.appendChild(carteTotal);
+  // — Totaux directement sous la période sélectionnée.
+  for (const [libelle, montant] of [
+    ['Revenus', formaterEuros(totalRevenus)],
+    ['Dépenses', formaterEuros(total)],
+    ['Solde', formaterSolde(totalRevenus - total)],
+  ]) {
+    const ligne = document.createElement('p');
+    ligne.className = 'bilan-resume-ligne';
+    const nom = document.createElement('span');
+    nom.textContent = libelle;
+    const valeur = document.createElement('strong');
+    valeur.textContent = montant;
+    ligne.append(nom, valeur);
+    resume.appendChild(ligne);
+  }
 
-  if (total === 0) {
+  if (total === 0 && totalRevenus === 0) {
     const vide = document.createElement('div');
     vide.className = 'carte';
     const message = document.createElement('p');
     message.className = 'vide';
-    message.textContent = 'Aucune dépense sur cette période.';
+    message.textContent = 'Aucune opération réelle sur cette période.';
     vide.appendChild(message);
     conteneur.appendChild(vide);
   }
@@ -891,7 +1026,7 @@ function rendreBilan() {
   if (total > 0 && bilanDimension === 'label') {
     const parLabel = new Map();
     for (const t of tickets) {
-      if (t.date < b.debut || t.date > b.fin) continue;
+      if (t.date < b.debut || t.date > b.fin || t.date > dateLocale()) continue;
       for (const ligne of t.lignes || []) {
         const ids = [...new Set([...(t.labels || []), ...(ligne.labels || [])])];
         for (const id of ids) {
@@ -908,7 +1043,7 @@ function rendreBilan() {
       complement: formaterEuros(valeur.cents) + ' (' + Math.round((valeur.cents / total) * 100) + '%)',
     })).sort((a, x) => x.cents - a.cents);
     if (lignesLabels.length) {
-      conteneur.appendChild(construireCarteBarres('Répartition par label', lignesLabels));
+      conteneur.appendChild(construireCarteBarres('', lignesLabels));
     } else {
       const vide = document.createElement('p');
       vide.className = 'vide';
@@ -919,11 +1054,11 @@ function rendreBilan() {
     note.className = 'info';
     note.textContent = 'Un montant peut compter dans plusieurs labels lorsqu’ils sont cumulés.';
     conteneur.appendChild(note);
-  } else if (total > 0) {
+  } else if (total > 0 && bilanDimension === 'categorie') {
     // — Répartition par catégorie sur la période choisie.
     const parCategorie = new Map();
     for (const d of depenses) {
-      if (d.date >= b.debut && d.date <= b.fin) {
+      if (d.date >= b.debut && d.date <= b.fin && d.date <= dateLocale()) {
         parCategorie.set(d.categorieId, (parCategorie.get(d.categorieId) ?? 0) + d.montant);
       }
     }
@@ -938,7 +1073,29 @@ function rendreBilan() {
         };
       })
       .sort((a, x) => x.cents - a.cents);
-    conteneur.appendChild(construireCarteBarres('Répartition par catégorie', lignes));
+    conteneur.appendChild(construireCarteBarres('', lignes));
+  }
+
+  if (totalRevenus > 0) {
+    const parCategorieRevenu = new Map();
+    for (const r of revenus) {
+      if (r.date >= b.debut && r.date <= b.fin && r.date <= dateLocale()) {
+        parCategorieRevenu.set(r.categorieId,
+          (parCategorieRevenu.get(r.categorieId) ?? 0) + r.montant);
+      }
+    }
+    const lignesRevenus = [...parCategorieRevenu.entries()].map(([id, cents]) => {
+      const cat = categorieOperation('revenu', id);
+      return {
+        libelle: cat ? cat.nom : '(catégorie supprimée)',
+        couleur: '#00897b',
+        cents,
+        complement: formaterEuros(cents) + ' (' + Math.round((cents / totalRevenus) * 100) + '%)',
+      };
+    }).sort((a, x) => x.cents - a.cents);
+    if (lignesRevenus.length) {
+      conteneur.appendChild(construireCarteBarres('Répartition des revenus', lignesRevenus));
+    }
   }
 
   // — Évolution 6 mois : vue de tendance, toujours en MOIS CALENDARIRES,
@@ -957,6 +1114,210 @@ function rendreBilan() {
     cents: totalMoisEvolution(m),
   }));
   conteneur.appendChild(construireCarteEvolution(lignesMois));
+  conteneur.appendChild(construireCarteProjection());
+}
+
+function dateSuivanteAbonnement(abonnement, dateCourante) {
+  if (abonnement.frequence === 'hebdomadaire') {
+    const date = new Date(dateCourante + 'T12:00:00');
+    date.setDate(date.getDate() + 7);
+    return dateLocale(date);
+  }
+  const [annee, mois, jour] = dateCourante.split('-').map(Number);
+  if (abonnement.frequence === 'annuelle') {
+    const moisCible = Number.isInteger(abonnement.moisAnnee) ? abonnement.moisAnnee : mois - 1;
+    const jourCible = Number.isInteger(abonnement.jourMois) ? abonnement.jourMois : jour;
+    return dateLocale(new Date(annee + 1, moisCible,
+      Math.min(jourCible, new Date(annee + 1, moisCible + 1, 0).getDate())));
+  }
+  const moisCible = mois;
+  const jourCible = Number.isInteger(abonnement.jourMois) ? abonnement.jourMois : jour;
+  return dateLocale(new Date(annee, moisCible,
+    Math.min(jourCible, new Date(annee, moisCible + 1, 0).getDate())));
+}
+
+function evenementsProjection() {
+  const aujourdHui = dateLocale();
+  const fin = dateMaxProjection();
+  const evenements = [];
+  for (const operation of depenses.concat(revenus)) {
+    if (operation.date <= aujourdHui || operation.date > fin) continue;
+    const type = revenus.includes(operation) ? 'revenu' : 'depense';
+    const categorie = categorieOperation(type, operation.categorieId);
+    evenements.push({
+      date: operation.date, type, montant: operation.montant,
+      nom: operation.note || (categorie ? categorie.nom : 'Opération prévue'),
+      note: categorie ? categorie.nom : '',
+    });
+  }
+  for (const abonnement of abonnements) {
+    if (abonnement.archivee || !abonnement.prochaineDate) continue;
+    let date = abonnement.prochaineDate;
+    if (date <= aujourdHui) {
+      evenements.push({
+        date, type: abonnement.type, montant: abonnement.montant,
+        nom: abonnement.nom, abonnementId: abonnement.id, aConfirmer: true,
+      });
+      continue;
+    }
+    let garde = 0;
+    while (date <= fin && garde < 60) {
+      evenements.push({
+        date, type: abonnement.type, montant: abonnement.montant,
+        nom: abonnement.nom, abonnementId: abonnement.id, aConfirmer: false,
+      });
+      date = dateSuivanteAbonnement(abonnement, date);
+      garde++;
+    }
+  }
+  return evenements.sort((a, b) => a.date.localeCompare(b.date) || a.nom.localeCompare(b.nom));
+}
+
+function construireCarteProjection() {
+  const carte = document.createElement('div');
+  carte.className = 'carte';
+  const titre = document.createElement('h2');
+  titre.textContent = 'Projection du solde (' + horizonProjection + ' mois)';
+  carte.appendChild(titre);
+  const description = document.createElement('p');
+  description.className = 'info';
+  description.textContent = 'À partir du solde actuel saisi dans les réglages. Les opérations à venir et les abonnements sont prévisionnels.';
+  carte.appendChild(description);
+
+  const evenements = evenementsProjection();
+  const fluxFuturs = evenements.filter((e) => !e.aConfirmer);
+  const points = [{ date: dateLocale(), label: 'Aujourd’hui', montant: soldeInitial }];
+  let solde = soldeInitial;
+  for (let i = 1; i <= horizonProjection; i++) {
+    const date = ajouterMois(dateLocale(), i);
+    for (const evenement of fluxFuturs) {
+      if (!evenement.inclus && evenement.date <= date) {
+        solde += evenement.type === 'revenu' ? evenement.montant : -evenement.montant;
+        evenement.inclus = true;
+      }
+    }
+    points.push({
+      date,
+      label: new Date(date + 'T12:00:00').toLocaleDateString('fr-FR', { month: 'short' }),
+      montant: solde,
+    });
+  }
+  const soldeFinal = points[points.length - 1].montant;
+  const resume = document.createElement('p');
+  resume.className = 'projection-solde';
+  resume.textContent = 'Solde estimé à l’horizon : ' + formaterSolde(soldeFinal);
+  carte.appendChild(resume);
+  carte.appendChild(construireCourbeProjection(points));
+
+  const titreEvenements = document.createElement('h3');
+  titreEvenements.textContent = 'Échéances et opérations prévues';
+  carte.appendChild(titreEvenements);
+  if (!evenements.length) {
+    const vide = document.createElement('p');
+    vide.className = 'vide';
+    vide.textContent = horizonProjection === 0
+      ? 'Augmente l’horizon dans les réglages pour afficher les échéances futures.'
+      : 'Aucune échéance prévue dans cette période.';
+    carte.appendChild(vide);
+  } else {
+    for (const evenement of evenements.slice(0, 12)) {
+      const ligne = document.createElement('div');
+      ligne.className = 'projection-evenement';
+      const libelle = document.createElement('span');
+      libelle.textContent = dateCourte(evenement.date) + ' · ' + evenement.nom +
+        (evenement.aConfirmer ? ' · À confirmer' : '');
+      const montant = document.createElement('strong');
+      montant.textContent = (evenement.type === 'revenu' ? '+' : '−') +
+        formaterEuros(evenement.montant);
+      ligne.appendChild(libelle);
+      ligne.appendChild(montant);
+      if (evenement.aConfirmer) {
+        const bouton = document.createElement('button');
+        bouton.type = 'button';
+        bouton.className = 'bouton secondaire';
+        bouton.textContent = 'Confirmer';
+        bouton.addEventListener('click', () =>
+          confirmerEcheance(evenement.abonnementId, evenement.date));
+        ligne.appendChild(bouton);
+      }
+      carte.appendChild(ligne);
+    }
+    if (evenements.length > 12) {
+      const suite = document.createElement('p');
+      suite.className = 'info';
+      suite.textContent = (evenements.length - 12) + ' autre(s) échéance(s) masquée(s).';
+      carte.appendChild(suite);
+    }
+  }
+  return carte;
+}
+
+function construireCourbeProjection(points) {
+  const hauteur = 150, largeur = 360, marge = 20;
+  const valeurs = points.map((p) => p.montant);
+  const mini = Math.min(0, ...valeurs);
+  const maxi = Math.max(0, ...valeurs);
+  const amplitude = maxi - mini || 1;
+  const coordonnees = points.map((p, index) => ({
+    x: marge + index * (largeur - 2 * marge) / Math.max(points.length - 1, 1),
+    y: hauteur - marge - ((p.montant - mini) / amplitude) * (hauteur - 2 * marge),
+  }));
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + largeur + ' ' + hauteur);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Projection du solde sur ' + horizonProjection + ' mois');
+  const zero = document.createElementNS(svg.namespaceURI, 'line');
+  const zeroY = hauteur - marge - ((0 - mini) / amplitude) * (hauteur - 2 * marge);
+  zero.setAttribute('x1', marge);
+  zero.setAttribute('x2', largeur - marge);
+  zero.setAttribute('y1', zeroY);
+  zero.setAttribute('y2', zeroY);
+  zero.setAttribute('stroke', '#b0b8b0');
+  zero.setAttribute('stroke-dasharray', '4 4');
+  svg.appendChild(zero);
+  const ligne = document.createElementNS(svg.namespaceURI, 'polyline');
+  ligne.setAttribute('points', coordonnees.map((p) => p.x + ',' + p.y).join(' '));
+  ligne.setAttribute('fill', 'none');
+  ligne.setAttribute('stroke', '#00897b');
+  ligne.setAttribute('stroke-width', '3');
+  ligne.setAttribute('stroke-linecap', 'round');
+  ligne.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(ligne);
+  coordonnees.forEach((p) => {
+    const point = document.createElementNS(svg.namespaceURI, 'circle');
+    point.setAttribute('cx', p.x);
+    point.setAttribute('cy', p.y);
+    point.setAttribute('r', '3');
+    point.setAttribute('fill', '#00897b');
+    svg.appendChild(point);
+  });
+  const labelsDates = document.createElement('div');
+  labelsDates.className = 'projection-mois';
+  labelsDates.style.gridTemplateColumns = 'repeat(' + points.length + ', minmax(0, 1fr))';
+  points.forEach((p) => {
+    const label = document.createElement('span');
+    label.textContent = p.label;
+    labelsDates.appendChild(label);
+  });
+  const conteneur = document.createElement('div');
+  conteneur.appendChild(svg);
+  conteneur.appendChild(labelsDates);
+  return conteneur;
+}
+
+function confirmerEcheance(id, date) {
+  const abonnement = abonnements.find((a) => a.id === id);
+  if (!abonnement || abonnement.archivee || abonnement.prochaineDate !== date || date > dateLocale()) return;
+  const entree = {
+    id: nouvelId(), date, montant: abonnement.montant,
+    categorieId: abonnement.categorieId, note: abonnement.nom,
+    source: 'abonnement', abonnementId: abonnement.id, creeLe: new Date().toISOString(),
+  };
+  (abonnement.type === 'revenu' ? revenus : depenses).push(entree);
+  abonnement.prochaineDate = dateSuivanteAbonnement(abonnement, date);
+  sauvegarder();
+  rafraichirTout();
+  montrerToast('Échéance confirmée ✔');
 }
 
 /* ---------- 10. ONGLET RÉGLAGES : CATÉGORIES ---------- */
@@ -1033,8 +1394,10 @@ function construireLigneCategorie(c) {
   boutonSuppr.title = 'Supprimer définitivement';
   boutonSuppr.addEventListener('click', () => {
     const utilisee = depenses.filter((d) => d.categorieId === c.id).length;
-    if (utilisee > 0) {
-      alert('Cette catégorie est utilisée par ' + utilisee + ' dépense(s). Archive-la plutôt.');
+    const abonnementUtilise = abonnements.some((a) =>
+      a.type === 'depense' && a.categorieId === c.id);
+    if (utilisee > 0 || abonnementUtilise) {
+      alert('Cette catégorie est utilisée. Archive-la plutôt.');
       return;
     }
     if (!confirm('Supprimer définitivement « ' + c.nom + ' » ?')) return;
@@ -1112,8 +1475,139 @@ function rendreReglages() {
   const conteneur = $('liste-categories');
   conteneur.innerHTML = '';
   for (const c of categories) conteneur.appendChild(construireLigneCategorie(c));
+  remplirCategoriesAbonnement($('select-type-abonnement').value || 'depense');
+  rendreCategoriesRevenus();
+  rendreAbonnements();
   rendreListeLabels();
   rendreInfoExport();
+}
+
+function rendreCategoriesRevenus() {
+  const conteneur = $('liste-categories-revenus');
+  conteneur.innerHTML = '';
+  for (const categorie of categoriesRevenus) {
+    const ligne = document.createElement('div');
+    ligne.className = 'categorie-ligne' + (categorie.archivee ? ' archivee' : '');
+    const point = document.createElement('span');
+    point.className = 'point';
+    point.style.background = '#00897b';
+    const nom = document.createElement('span');
+    nom.textContent = categorie.nom;
+    ligne.appendChild(point);
+    ligne.appendChild(nom);
+    if (categorie.archivee) {
+      const archive = document.createElement('span');
+      archive.className = 'tag';
+      archive.textContent = 'archivée';
+      ligne.appendChild(archive);
+    }
+    const boutons = document.createElement('div');
+    boutons.className = 'boutons';
+    const renommer = document.createElement('button');
+    renommer.type = 'button';
+    renommer.textContent = '✏️';
+    renommer.title = 'Renommer';
+    renommer.addEventListener('click', () => {
+      const nouveau = (prompt('Nouveau nom :', categorie.nom) || '').trim();
+      if (!nouveau) return;
+      if (categoriesRevenus.some((c) => c.id !== categorie.id &&
+          normaliser(c.nom) === normaliser(nouveau))) {
+        alert('Une catégorie de revenu porte déjà ce nom.');
+        return;
+      }
+      categorie.nom = nouveau;
+      sauvegarder();
+      rafraichirTout();
+    });
+    const archiver = document.createElement('button');
+    archiver.type = 'button';
+    archiver.textContent = categorie.archivee ? '↩️' : '📦';
+    archiver.title = categorie.archivee ? 'Désarchiver' : 'Archiver';
+    archiver.addEventListener('click', () => {
+      categorie.archivee = !categorie.archivee;
+      sauvegarder();
+      rafraichirTout();
+    });
+    const supprimer = document.createElement('button');
+    supprimer.type = 'button';
+    supprimer.textContent = '🗑️';
+    supprimer.title = 'Supprimer définitivement';
+    supprimer.addEventListener('click', () => {
+      const utilisee = revenus.some((r) => r.categorieId === categorie.id) ||
+        abonnements.some((a) => a.type === 'revenu' && a.categorieId === categorie.id);
+      if (utilisee) {
+        alert('Cette catégorie est utilisée. Archive-la plutôt.');
+        return;
+      }
+      if (!confirm('Supprimer définitivement « ' + categorie.nom + ' » ?')) return;
+      categoriesRevenus = categoriesRevenus.filter((c) => c.id !== categorie.id);
+      sauvegarder();
+      rafraichirTout();
+    });
+    boutons.append(renommer, archiver, supprimer);
+    ligne.appendChild(boutons);
+    conteneur.appendChild(ligne);
+  }
+}
+
+function remplirCategoriesAbonnement(type) {
+  const select = $('select-categorie-abonnement');
+  select.innerHTML = '';
+  select.appendChild(new Option('— choisir une catégorie —', ''));
+  for (const categorie of categoriesActives(type)) {
+    select.appendChild(new Option(categorie.nom, categorie.id));
+  }
+}
+
+function rendreAbonnements() {
+  const conteneur = $('liste-abonnements');
+  conteneur.innerHTML = '';
+  for (const abonnement of abonnements) {
+    const ligne = document.createElement('div');
+    ligne.className = 'abonnement-ligne' + (abonnement.archivee ? ' archivee' : '');
+    const detail = document.createElement('div');
+    detail.className = 'quoi';
+    const nom = document.createElement('strong');
+    nom.textContent = abonnement.nom + (abonnement.archivee ? ' · suspendu' : '');
+    const info = document.createElement('small');
+    const categorie = categorieOperation(abonnement.type, abonnement.categorieId);
+    const frequence = abonnement.frequence === 'hebdomadaire' ? 'chaque semaine' :
+      abonnement.frequence === 'annuelle' ? 'chaque année' : 'chaque mois';
+    info.textContent = formaterEuros(abonnement.montant) + ' · ' + frequence +
+      ' · ' + (categorie ? categorie.nom : 'catégorie supprimée') +
+      ' · prochaine échéance ' + dateCourte(abonnement.prochaineDate);
+    detail.append(nom, info);
+    const boutons = document.createElement('div');
+    boutons.className = 'boutons';
+    const suspendre = document.createElement('button');
+    suspendre.type = 'button';
+    suspendre.textContent = abonnement.archivee ? '▶️' : '⏸️';
+    suspendre.title = abonnement.archivee ? 'Reprendre' : 'Suspendre';
+    suspendre.addEventListener('click', () => {
+      abonnement.archivee = !abonnement.archivee;
+      sauvegarder();
+      rafraichirTout();
+    });
+    const supprimer = document.createElement('button');
+    supprimer.type = 'button';
+    supprimer.textContent = '🗑️';
+    supprimer.title = 'Supprimer l’abonnement';
+    supprimer.addEventListener('click', () => {
+      if (!confirm('Supprimer l’abonnement « ' + abonnement.nom + ' » ?')) return;
+      abonnements = abonnements.filter((a) => a.id !== abonnement.id);
+      sauvegarder();
+      rafraichirTout();
+    });
+    boutons.append(suspendre, supprimer);
+    ligne.append(detail, boutons);
+    conteneur.appendChild(ligne);
+  }
+  if (!abonnements.length) {
+    const vide = document.createElement('p');
+    vide.className = 'vide';
+    vide.textContent = 'Aucun abonnement enregistré.';
+    conteneur.appendChild(vide);
+  }
 }
 
 /* ---------- 11. SAUVEGARDE / RESTAURATION (export · import) ---------- */
@@ -1142,6 +1636,11 @@ function exporterJSON() {
     exporteLe: new Date().toISOString(),
     categories,
     depenses,
+    categoriesRevenus,
+    revenus,
+    abonnements,
+    soldeInitialCentimes: soldeInitial,
+    horizonProjection,
     tickets,
     labels,
   };
@@ -1157,15 +1656,19 @@ function exporterJSON() {
 function exporterCSV() {
   // Sémicolons + virgule décimale + BOM UTF-8 : c'est la combinaison que
   // Excel FR ouvre proprement en double-cliquant le fichier.
-  const lignes = ['Date;Montant (€);Catégorie;Note'];
-  const trie = [...depenses].sort((a, b) => a.date.localeCompare(b.date));
-  for (const d of trie) {
-    const cat = categorieParId(d.categorieId);
+  const lignes = ['Type;Date;Montant (€);Catégorie;Note'];
+  const trie = [
+    ...depenses.map((d) => ({ ...d, type: 'depense' })),
+    ...revenus.map((r) => ({ ...r, type: 'revenu' })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  for (const operation of trie) {
+    const cat = categorieOperation(operation.type, operation.categorieId);
     lignes.push([
-      d.date,
-      (d.montant / 100).toFixed(2).replace('.', ','),
+      operation.type === 'revenu' ? 'Revenu' : 'Dépense',
+      operation.date,
+      (operation.montant / 100 * (operation.type === 'revenu' ? 1 : -1)).toFixed(2).replace('.', ','),
       cat ? cat.nom : '(supprimée)',
-      (d.note || '').replaceAll(';', ','),
+      (operation.note || '').replaceAll(';', ','),
     ].join(';'));
   }
   telecharger(
@@ -1183,17 +1686,34 @@ async function importerJSON(fichier) {
     }
     // Contrôle léger : chaque dépense doit avoir une date et un montant entier.
     const depensesValides = donnees.depenses.filter(
-      (d) => d && typeof d.date === 'string' && typeof d.montant === 'number'
+      (d) => d && dateValide(d.date) && Number.isSafeInteger(d.montant)
     );
+    const revenusValides = Array.isArray(donnees.revenus) ? donnees.revenus.filter(
+      (r) => r && dateValide(r.date) && Number.isSafeInteger(r.montant)
+    ) : [];
+    const abonnementsValides = Array.isArray(donnees.abonnements)
+      ? donnees.abonnements.filter(abonnementValide) : [];
     if (!confirm('Remplacer les données actuelles par celles du fichier ?\n(' +
-        depensesValides.length + ' dépenses à importer)')) return;
+        depensesValides.length + ' dépenses, ' + revenusValides.length + ' revenus et ' +
+        abonnementsValides.length + ' abonnements)')) return;
     categories = donnees.categories;
     depenses = depensesValides;
+    categoriesRevenus = Array.isArray(donnees.categoriesRevenus)
+      ? donnees.categoriesRevenus
+      : CATEGORIES_REVENUS_DEPART.map((nom) => ({ id: nouvelId(), nom, archivee: false }));
+    revenus = revenusValides;
+    abonnements = abonnementsValides;
+    soldeInitial = Number.isSafeInteger(donnees.soldeInitialCentimes)
+      ? donnees.soldeInitialCentimes : 0;
+    horizonProjection = Number.isInteger(donnees.horizonProjection) &&
+      donnees.horizonProjection >= 0 && donnees.horizonProjection <= 12
+      ? donnees.horizonProjection : HORIZON_PAR_DEFAUT;
     tickets = Array.isArray(donnees.tickets) ? donnees.tickets : [];
     labels = Array.isArray(donnees.labels) ? donnees.labels : labels;
     sauvegarder();
     rafraichirTout();
-    montrerToast('Import réussi : ' + depenses.length + ' dépenses ✔');
+    montrerToast('Import réussi : ' + depenses.length + ' dépenses, ' +
+      revenus.length + ' revenus et ' + abonnements.length + ' abonnements ✔');
   } catch {
     alert('Fichier illisible ou format inattendu.');
   }
@@ -1245,6 +1765,11 @@ function installerJeuDeTest() {
   // 1. Table rase (mêmes clés que la réinitialisation complète).
   localStorage.removeItem(CLE_DEPENSES);
   localStorage.removeItem(CLE_CATEGORIES);
+  localStorage.removeItem(CLE_REVENUS);
+  localStorage.removeItem(CLE_CATEGORIES_REVENUS);
+  localStorage.removeItem(CLE_ABONNEMENTS);
+  localStorage.removeItem(CLE_SOLDE_INITIAL);
+  localStorage.removeItem(CLE_HORIZON_PROJECTION);
   localStorage.removeItem(CLE_TICKETS);
   localStorage.removeItem(CLE_LABELS);
   localStorage.removeItem(CLE_DERNIER_EXPORT);
@@ -1696,7 +2221,13 @@ function ouvrirFicheTicket(id, mode = 'consultation') {
 /* ---------- 12. DÉMARRAGE : câblage des événements + premier rendu ---------- */
 
 function rafraichirTout() {
-  peuplerSelectCategories();
+  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  $('select-horizon-projection').value = String(horizonProjection);
+  mettreAJourFormulaireType($('select-type-operation').value || 'depense',
+    $('select-type-operation').value === 'revenu' ? $('champ-categorie').value : categorieChoisie);
+  $('champ-date').max = dateMaxProjection();
+  $('champ-date-abonnement').max = dateMaxProjection();
+  remplirCategoriesAbonnement($('select-type-abonnement').value || 'depense');
   rendreChips();
   afficherTotalMois();
   rendreHistorique();
@@ -1716,33 +2247,47 @@ function demarrer() {
     e.preventDefault(); // on gère nous-mêmes l'envoi (pas de reload de page)
     const centimes = parseMontant($('champ-montant').value);
     if (centimes === null) { alert('Saisis un montant valide (ex. 12,50).'); return; }
+    const type = editionEnCours ? editionType : $('select-type-operation').value;
     const categorieId = $('champ-categorie').value;
     if (!categorieId) { alert('Choisis une catégorie.'); return; }
     const date = $('champ-date').value || dateLocale();
     const note = $('champ-note').value.trim();
+    if (date > dateMaxProjection()) {
+      alert('La date dépasse l’horizon de projection choisi dans les réglages.');
+      return;
+    }
+    const collection = type === 'revenu' ? revenus : depenses;
 
     if (editionEnCours) {
-      // --- Modification
-      const d = depenses.find((x) => x.id === editionEnCours);
-      if (d) { d.date = date; d.montant = centimes; d.categorieId = categorieId; d.note = note; }
+      const operation = collection.find((x) => x.id === editionEnCours);
+      if (operation) {
+        operation.date = date;
+        operation.montant = centimes;
+        operation.categorieId = categorieId;
+        operation.note = note;
+      }
       sauvegarder();
       afficherTotalMois();
       terminerEdition(false);
-      montrerToast('Dépense modifiée ✔');
+      montrerToast(type === 'revenu' ? 'Rentrée modifiée ✔' : 'Dépense modifiée ✔');
       afficherOnglet('historique');
     } else {
-      // --- Création
-      depenses.push({
+      collection.push({
         id: nouvelId(), date, montant: centimes,
         categorieId, note, source: 'manuelle', creeLe: new Date().toISOString(),
       });
       sauvegarder();
-      categorieChoisie = categorieId; // conserve la catégorie pour la saisie suivante
+      if (type === 'depense') categorieChoisie = categorieId;
       afficherTotalMois();
       terminerEdition(true);
       rendreChips();
-      montrerToast(formaterEuros(centimes) + ' dans ' + categorieParId(categorieId).nom + ' ✔');
+      const categorie = categorieOperation(type, categorieId);
+      montrerToast(formaterEuros(centimes) + ' dans ' +
+        (categorie ? categorie.nom : 'la catégorie') + ' ✔');
     }
+  });
+  $('select-type-operation').addEventListener('change', function () {
+    mettreAJourFormulaireType(this.value);
   });
   $('bouton-annuler').addEventListener('click', () => terminerEdition(true));
 
@@ -1767,6 +2312,34 @@ function demarrer() {
     localStorage.setItem(CLE_PREF_ACCUEIL, this.value);
     montrerToast('Page d’accueil enregistrée ✔');
   });
+  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  $('champ-solde-initial').addEventListener('change', function () {
+    const valeur = Number(String(this.value).replace(',', '.'));
+    if (!Number.isFinite(valeur)) {
+      alert('Saisis un solde valide.');
+      this.value = (soldeInitial / 100).toFixed(2);
+      return;
+    }
+    soldeInitial = Math.round(valeur * 100);
+    sauvegarder();
+    rendreBilan();
+    montrerToast('Solde de départ enregistré ✔');
+  });
+  $('select-horizon-projection').value = String(horizonProjection);
+  $('select-horizon-projection').addEventListener('change', function () {
+    const valeur = Number(this.value);
+    if (!Number.isInteger(valeur) || valeur < 0 || valeur > 12) {
+      alert('L’horizon doit être compris entre 0 et 12 mois.');
+      this.value = String(horizonProjection);
+      return;
+    }
+    horizonProjection = valeur;
+    $('champ-date').max = dateMaxProjection();
+    $('champ-date-abonnement').max = dateMaxProjection();
+    sauvegarder();
+    rendreBilan();
+    montrerToast('Horizon de projection enregistré ✔');
+  });
   $('form-categorie').addEventListener('submit', (e) => {
     e.preventDefault();
     const nom = $('champ-nom-categorie').value.trim();
@@ -1779,6 +2352,7 @@ function demarrer() {
       couleur: $('champ-couleur-categorie').value || PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
       archivee: false,
     });
+
     sauvegarder();
     $('champ-nom-categorie').value = '';
     afficherSelecteurCouleurFormulaire(
@@ -1791,6 +2365,56 @@ function demarrer() {
     rendreChips();
     rendreReglages();
     montrerToast('Catégorie ajoutée ✔');
+  });
+
+  $('form-categorie-revenu').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nom = $('champ-nom-categorie-revenu').value.trim();
+    if (!nom) return;
+    if (categoriesRevenus.some((c) => normaliser(c.nom) === normaliser(nom))) {
+      alert('Une catégorie de revenu porte déjà ce nom.');
+      return;
+    }
+    categoriesRevenus.push({ id: nouvelId(), nom, archivee: false });
+    $('champ-nom-categorie-revenu').value = '';
+    sauvegarder();
+    rafraichirTout();
+    montrerToast('Catégorie de revenu ajoutée ✔');
+  });
+
+  $('select-type-abonnement').addEventListener('change', function () {
+    remplirCategoriesAbonnement(this.value);
+  });
+  $('form-abonnement').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nom = $('champ-nom-abonnement').value.trim();
+    const montant = parseMontant($('champ-montant-abonnement').value);
+    const type = $('select-type-abonnement').value;
+    const categorieId = $('select-categorie-abonnement').value;
+    const prochaineDate = $('champ-date-abonnement').value;
+    if (!nom || montant === null || !categorieId || !prochaineDate) {
+      alert('Complète tous les champs de l’abonnement.');
+      return;
+    }
+    if (prochaineDate < dateLocale() || prochaineDate > dateMaxProjection()) {
+      alert('La prochaine échéance doit être comprise entre aujourd’hui et la fin de la projection.');
+      return;
+    }
+    const [annee, mois, jour] = prochaineDate.split('-').map(Number);
+    abonnements.push({
+      id: nouvelId(), nom, montant, type, categorieId,
+      frequence: $('select-frequence-abonnement').value,
+      prochaineDate, jourMois: jour, moisAnnee: mois - 1,
+      archivee: false, creeLe: new Date().toISOString(),
+    });
+    sauvegarder();
+    this.reset();
+    $('select-type-abonnement').value = 'depense';
+    $('select-frequence-abonnement').value = 'mensuelle';
+    $('champ-date-abonnement').value = dateDefautAbonnement();
+    remplirCategoriesAbonnement('depense');
+    rafraichirTout();
+    montrerToast('Abonnement ajouté ✔');
   });
 
   // — Labels
@@ -1828,6 +2452,11 @@ function demarrer() {
     if (!confirm('Dernière confirmation : cette action est irréversible (sauf export préalable).')) return;
     localStorage.removeItem(CLE_DEPENSES);
     localStorage.removeItem(CLE_CATEGORIES);
+    localStorage.removeItem(CLE_REVENUS);
+    localStorage.removeItem(CLE_CATEGORIES_REVENUS);
+    localStorage.removeItem(CLE_ABONNEMENTS);
+    localStorage.removeItem(CLE_SOLDE_INITIAL);
+    localStorage.removeItem(CLE_HORIZON_PROJECTION);
     localStorage.removeItem(CLE_TICKETS);
     localStorage.removeItem(CLE_LABELS);
     localStorage.removeItem(CLE_DERNIER_EXPORT);
@@ -1925,9 +2554,15 @@ function demarrer() {
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
+  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  $('select-horizon-projection').value = String(horizonProjection);
+  $('champ-date').max = dateMaxProjection();
+  $('champ-date-abonnement').max = dateMaxProjection();
+  $('champ-date-abonnement').value = dateDefautAbonnement();
+  remplirCategoriesAbonnement('depense');
   $('champ-couleur-categorie').value = PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length];
   $('champ-couleur-label').value = PALETTE_LABELS[labels.length % PALETTE_LABELS.length];
-  peuplerSelectCategories();
+  mettreAJourFormulaireType('depense', categorieChoisie);
   rendreChips();
   $('champ-date').value = dateLocale();
   afficherTotalMois();
