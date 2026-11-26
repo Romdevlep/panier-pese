@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 const CLE_DEPENSES       = 'pp_depenses';
 const CLE_CATEGORIES     = 'pp_categories';
 const CLE_DERNIER_EXPORT = 'pp_dernier_export';
+const CLE_PREF_MOIS      = 'pp_pref_mois';
 
 // Groupes de catégories (fixe dans le prototype — modifiable ici dans le code).
 const GROUPES = ['Alimentation', 'Restaurants', 'Vices payés', 'Transport', 'Maison', 'Santé', 'Loisirs', 'Autre'];
@@ -45,6 +46,11 @@ const CATEGORIES_DEPART = [
   { nom: 'Divers',               groupe: 'Autre' },
 ];
 
+// Préférence « mois calendaire / glissant ». Défaut : calendaire.
+function prefMois() {
+  return localStorage.getItem(CLE_PREF_MOIS) === 'glissant' ? 'glissant' : 'calendaire';
+};
+
 /* ---------- 2. ÉTAT (les "temp-tables" du prototype) ---------- */
 
 // Convention importante : les montants sont stockés en CENTIMES (entiers),
@@ -62,17 +68,83 @@ function nouvelId() {
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 }
 
+// Ajoute un zéro devant si nécessaire : 7 → '07'. Les mois et jours
+// doivent tenir sur 2 chiffres pour que les dates 'AAAA-MM-JJ' se
+// comparent correctement comme du texte (octobre < novembre).
+function pad2(n) { return String(n).padStart(2, '0'); }
+
 // Date du jour au format AAAA-MM-JJ, en heure LOCALE.
-// (toISOString() serait en UTC : faux le soir de 22h à minuit en hiver.)
 function dateLocale(d = new Date()) {
-  const deux = (n) => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + deux(d.getMonth() + 1) + '-' + deux(d.getDate());
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
 // '2026-11' → 'novembre 2026' (le T12:00 évite un décalage de fuseau).
 function libelleMois(mois) {
   return new Date(mois + '-01T12:00:00')
     .toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+/* ----- Périodes : bornes en chaînes AAAA-MM-JJ, comparées comme du texte ----- */
+
+// Bornes d'un mois calendaire 'AAAA-MM' (le jour 0 d'un mois = son dernier jour).
+function bornesMoisCalendaire(mois) {
+  const [annee, moisNum] = mois.split('-').map(Number);
+  const dernierJour = new Date(annee, moisNum, 0).getDate();
+  return { debut: mois + '-01', fin: mois + '-' + pad2(dernierJour) };
+}
+
+// Mois glissant : du même jour du mois précédent (inclus) à aujourd'hui.
+// Si le mois précédent est plus court (31 → 28/30), on borne à son dernier jour.
+function bornesMoisGlignant() {
+  const auj = new Date();
+  const debut = new Date(auj.getFullYear(), auj.getMonth() - 1, auj.getDate());
+  if (debut.getDate() !== auj.getDate()) debut.setDate(0);
+  return { debut: dateLocale(debut), fin: dateLocale(auj) };
+}
+
+// Bornes du « mois en cours », selon la préférence des Réglages.
+function bornesMoisCourant() {
+  return prefMois() === 'glissant'
+    ? bornesMoisGlignant()
+    : bornesMoisCalendaire(dateLocale().slice(0, 7));
+}
+
+// Somme des dépenses d'une période.
+function totalSurPeriode(bornes) {
+  return depenses
+    .filter((d) => d.date >= bornes.debut && d.date <= bornes.fin)
+    .reduce((somme, d) => somme + d.montant, 0);
+}
+
+// Tous les mois de la plus ancienne dépense au mois courant (celui-ci TOUJOURS inclus,
+// même sans dépense — exigence du cahier des charges).
+function listeMoisDisponibles() {
+  const courant = dateLocale().slice(0, 7);
+  let plusAncien = courant;
+  for (const d of depenses) if (d.date.slice(0, 7) < plusAncien) plusAncien = d.date.slice(0, 7);
+  const liste = [];
+  let [y, m] = plusAncien.split('-').map(Number);
+  const [cy, cm] = courant.split('-').map(Number);
+  while (y < cy || (y === cy && m <= cm)) {
+    liste.push(y + '-' + pad2(m));
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return liste;
+}
+
+// '6 nov. 2026' — l'année n'apparaît que si différente de l'année courante.
+function dateCourte(jour) {
+  const d = new Date(jour + 'T12:00:00');
+  const texte = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return d.getFullYear() === new Date().getFullYear() ? texte : texte + ' ' + d.getFullYear();
+}
+
+// Libellé lisible et transparent : 'du 26 oct. au 26 nov. — 32 j'.
+function libellePeriode(b) {
+  const nbJours = Math.round(
+    (new Date(b.fin + 'T12:00:00') - new Date(b.debut + 'T12:00:00')) / 86400000
+  ) + 1;
+  return 'du ' + dateCourte(b.debut) + ' au ' + dateCourte(b.fin) + ' — ' + nbJours + ' j';
 }
 
 function formaterEuros(centimes) {
@@ -228,19 +300,16 @@ function modifierDepense(id) {
   afficherOnglet('saisir');
 }
 
-function nombreTotalMois() {
-  const mois = dateLocale().slice(0, 7);
-  let total = 0;
-  for (const d of depenses) if (d.date.slice(0, 7) === mois) total += d.montant;
-  return total;
-}
-
-// Le total du mois, affiché en permanence sous le titre.
+// Total affiché sous le titre : suit la préférence calendaire / glissant.
 function afficherTotalMois() {
-  const mois = dateLocale().slice(0, 7);
-  const label = libelleMois(mois);
-  $('total-mois').textContent =
-    label.charAt(0).toUpperCase() + label.slice(1) + ' : ' + formaterEuros(nombreTotalMois());
+  let label;
+  if (prefMois() === 'glissant') {
+    label = 'Mois glissant';
+  } else {
+    const l = libelleMois(dateLocale().slice(0, 7));
+    label = l.charAt(0).toUpperCase() + l.slice(1);
+  }
+  $('total-mois').textContent = label + ' : ' + formaterEuros(totalSurPeriode(bornesMoisCourant()));
 }
 
 /* ---------- 8. ONGLET HISTORIQUE ---------- */
@@ -379,54 +448,112 @@ function construireCarteBarres(titre, lignes) {
   return carte;
 }
 
+/* ----- État de la vue Bilan (non persisté : « Ce mois-ci » par défaut) ----- */
+let bilanMode    = 'mois-courant';             // 'mois-courant' | 'un-mois' | 'plage' | 'tout'
+let bilanMois    = dateLocale().slice(0, 7);   // sélecteur « un mois »
+let bilanMoisDeb = dateLocale().slice(0, 7);   // sélecteur « plage » début
+let bilanMoisFin = dateLocale().slice(0, 7);   // sélecteur « plage » fin
+
+// Bornes effectivement utilisées selon le mode.
+function bornesBilan() {
+  switch (bilanMode) {
+    case 'un-mois': return bornesMoisCalendaire(bilanMois); // un mois précis = TOUJOURS calendaire
+    case 'plage':   return { debut: bilanMoisDeb + '-01', fin: bornesMoisCalendaire(bilanMoisFin).fin };
+    case 'tout': {
+      // Plus ancienne dépense → aujourd'hui (ou juste aujourd'hui si vide).
+      let debut = dateLocale();
+      for (const d of depenses) if (d.date < debut) debut = d.date;
+      return { debut, fin: dateLocale() };
+    }
+    default:        return bornesMoisCourant(); // « Ce mois-ci » suit la préférence
+  }
+}
+
+function titrePeriodeBilan() {
+  switch (bilanMode) {
+    case 'un-mois': {
+      const l = libelleMois(bilanMois);
+      return l.charAt(0).toUpperCase() + l.slice(1);
+    }
+    case 'plage':   return 'Période choisie';
+    case 'tout':    return 'Depuis le début';
+    default:        return prefMois() === 'glissant' ? 'Mois glissant' : 'Ce mois-ci';
+  }
+}
+
+// Remplit les trois <select> de mois ; le mois courant y figure toujours.
+function peuplerSelectsBilan() {
+  const mois = listeMoisDisponibles();
+  const remplir = (select, valeur) => {
+    select.innerHTML = '';
+    for (const m of mois) {
+      const l = libelleMois(m);
+      select.appendChild(new Option(l.charAt(0).toUpperCase() + l.slice(1), m));
+    }
+    select.value = valeur;
+  };
+  remplir($('select-bilan-mois'),  bilanMois);
+  remplir($('select-bilan-debut'), bilanMoisDeb);
+  remplir($('select-bilan-fin'),   bilanMoisFin);
+}
+
 function rendreBilan() {
+  peuplerSelectsBilan(); // les mois disponibles peuvent avoir grandi (première dépense ancienne)
+
+  // Affiche le sous-formulaire du mode actif seulement.
+  $('choix-un-mois').hidden = bilanMode !== 'un-mois';
+  $('choix-plage').hidden   = bilanMode !== 'plage';
+
+  const b = bornesBilan();
+  $('libelle-periode').textContent = libellePeriode(b);
+
   const conteneur = $('bilan-contenu');
   conteneur.innerHTML = '';
-  const mois = dateLocale().slice(0, 7);
-  const totalMois = nombreTotalMois();
+  const total = totalSurPeriode(b);
 
-  // — Lecture 1 : le total du mois (les centimes s'additionnent exactement).
+  // — Carte du total sur la période.
   const carteTotal = document.createElement('div');
   carteTotal.className = 'carte';
   const h2 = document.createElement('h2');
-  h2.textContent = 'Ce mois-ci';
-  const total = document.createElement('p');
-  total.style.cssText = 'font-size:1.6rem;font-weight:700;margin:4px 0;color:var(--vert)';
-  total.textContent = formaterEuros(totalMois);
+  h2.textContent = titrePeriodeBilan();
+  const totalP = document.createElement('p');
+  totalP.style.cssText = 'font-size:1.6rem;font-weight:700;margin:4px 0;color:var(--vert)';
+  totalP.textContent = formaterEuros(total);
   carteTotal.appendChild(h2);
-  carteTotal.appendChild(total);
+  carteTotal.appendChild(totalP);
   conteneur.appendChild(carteTotal);
 
-  if (totalMois === 0) {
+  if (total === 0) {
     const vide = document.createElement('div');
     vide.className = 'carte';
-    vide.innerHTML = '<p class="vide">Aucune dépense ce mois-ci. Saisis-en depuis l’onglet Saisir !</p>';
+    vide.innerHTML = '<p class="vide">Aucune dépense sur cette période.</p>';
     conteneur.appendChild(vide);
     return;
   }
 
-  // — Lecture 2 : répartition par catégorie (mois en cours), la plus gourmande d'abord.
+  // — Répartition par catégorie sur la période choisie.
   const parCategorie = new Map();
   for (const d of depenses) {
-    if (d.date.slice(0, 7) === mois) {
+    if (d.date >= b.debut && d.date <= b.fin) {
       parCategorie.set(d.categorieId, (parCategorie.get(d.categorieId) ?? 0) + d.montant);
     }
   }
-  const lignesCategories = [...parCategorie.entries()]
+  const lignes = [...parCategorie.entries()]
     .map(([id, cents]) => {
       const cat = categorieParId(id);
-      const pourcent = Math.round((cents / totalMois) * 100);
       return {
-        libelle: cat ? cat.nom : '(supprimée)',
+        libelle: cat ? cat.nom : '(catégorie supprimée)',
         couleur: cat ? (COULEURS_GROUPES[cat.groupe] || '#9e9e9e') : '#9e9e9e',
         cents,
-        complement: formaterEuros(cents) + ' (' + pourcent + '%)',
+        complement: formaterEuros(cents) + ' (' + Math.round((cents / total) * 100) + '%)',
       };
     })
-    .sort((a, b) => b.cents - a.cents);
-  conteneur.appendChild(construireCarteBarres('Répartition par catégorie', lignesCategories));
+    .sort((a, x) => x.cents - a.cents);
+  conteneur.appendChild(construireCarteBarres('Répartition par catégorie', lignes));
 
-  // — Lecture 3 : évolution sur les 6 derniers mois (mois courant compris).
+  // — Évolution 6 mois : vue de tendance, toujours en MOIS CALENDARIRES,
+  //   ancrée sur aujourd'hui (indépendante de la période sélectionnée).
+  const moisCalendaire = dateLocale().slice(0, 7);
   const sixMois = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date();
@@ -436,14 +563,12 @@ function rendreBilan() {
   const lignesMois = sixMois.map((m) => ({
     libelle: new Date(m + '-01T12:00:00')
       .toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
-    couleur: m === mois ? '#2e7d32' : '#a5c8a7',
+    couleur: m === moisCalendaire ? '#2e7d32' : '#a5c8a7',
     cents: depenses
       .filter((d) => d.date.slice(0, 7) === m)
       .reduce((somme, d) => somme + d.montant, 0),
   }));
-  const carteMois = construireCarteBarres('Évolution (6 mois)', lignesMois);
-  carteMois.querySelector('.bilan-libelle:last-of-type span, .bilan-libelle:last-child span');
-  conteneur.appendChild(carteMois);
+  conteneur.appendChild(construireCarteBarres('Évolution (6 mois)', lignesMois));
 }
 
 /* ---------- 10. ONGLET RÉGLAGES : CATÉGORIES ---------- */
@@ -851,6 +976,39 @@ function demarrer() {
     rafraichirTout();
     terminerEdition(false);
     montrerToast('Données effacées — catégories de départ recréées');
+  });
+
+  // — Bilan : sélecteur de période
+  for (const bouton of document.querySelectorAll('#segmente-periode button')) {
+    bouton.addEventListener('click', () => {
+      bilanMode = bouton.dataset.mode;
+      for (const autre of document.querySelectorAll('#segmente-periode button')) {
+        autre.classList.toggle('actif', autre === bouton);
+      }
+      rendreBilan();
+    });
+  }
+  $('select-bilan-mois').addEventListener('change', function () {
+    bilanMois = this.value; rendreBilan();
+  });
+  $('select-bilan-debut').addEventListener('change', function () {
+    bilanMoisDeb = this.value;
+    if (bilanMoisDeb > bilanMoisFin) bilanMoisFin = bilanMoisDeb; // jamais à l'envers
+    rendreBilan();
+  });
+  $('select-bilan-fin').addEventListener('change', function () {
+    bilanMoisFin = this.value;
+    if (bilanMoisFin < bilanMoisDeb) bilanMoisDeb = bilanMoisFin;
+    rendreBilan();
+  });
+
+  // — Préférences : mois calendaire / glissant
+  $('select-pref-mois').value = prefMois();
+  $('select-pref-mois').addEventListener('change', function () {
+    localStorage.setItem(CLE_PREF_MOIS, this.value);
+    afficherTotalMois();
+    rendreBilan();
+    montrerToast('Préférence enregistrée ✔');
   });
 
   // — Outils de test (À RETIRER en version finale)
