@@ -970,62 +970,118 @@ function rendreSimulation() {
     groupe.appendChild(titre);
 
     for (const l of lignesZone) {
-      const ligne = document.createElement('div');
-      ligne.className = 'simu-ligne';
-      const gauche = document.createElement('span');
-      gauche.textContent = l.label;
-      const prix = document.createElement('strong');
-      prix.textContent = formaterEuros(l.cents);
-      ligne.appendChild(gauche);
-      ligne.appendChild(prix);
-      rendreLigneDeplacable(l, ligne, ligne);
-      groupe.appendChild(ligne);
+      groupe.appendChild(construireLigneSimu(l));
     }
     conteneur.appendChild(groupe);
   }
 }
 
-// Glisser-déposer aux Pointer Events : marche à la souris COMPTE au doigt.
-// On traîne la vraie ligne (pas un clone), et on relâche sur la zone
-// trouvée sous le doigt via elementFromPoint.
-function rendreLigneDeplacable(l, el) {
-  el.addEventListener('pointerdown', (e) => {
+let simuLigneChoisie = null; // la ligne en cours d'affectation via le picker
+
+// Construit une ligne : poignée (drag) + libellé (tap → picker) + prix.
+function construireLigneSimu(l) {
+  const ligne = document.createElement('div');
+  ligne.className = 'simu-ligne';
+
+  const poignee = document.createElement('span');
+  poignee.className = 'simu-poignee';
+  poignee.textContent = '⠿';
+  poignee.title = 'Glisser vers une catégorie';
+  brancherDeplacement(l, poignee);
+
+  const label = document.createElement('span');
+  label.textContent = l.label;
+
+  const prix = document.createElement('span');
+  prix.className = 'prix';
+  prix.textContent = formaterEuros(l.cents);
+
+  ligne.appendChild(poignee);
+  ligne.appendChild(label);
+  ligne.appendChild(prix);
+
+  // Tap n'importe où ailleurs : sélecteur des catégories existantes.
+  ligne.addEventListener('click', () => ouvrirPicker(l));
+
+  return ligne;
+}
+
+// Glisser-déposer aux Pointer Events, démarré UNIQUEMENT depuis la poignée
+// (le scroll du ticket n'est jamais intercepté ailleurs sur la ligne).
+function brancherDeplacement(l, poignee) {
+  poignee.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     const departX = e.clientX, departY = e.clientY;
     let dest = null;
+    const ligne = poignee.parentElement;
 
-    // Pendant le déplacement, la ligne ne doit pas "manger" le point :
+    // La ligne suivie ne doit pas « manger » le point :
     // sinon elementFromPoint la renvoie elle-même, jamais la zone.
-    el.style.pointerEvents = 'none';
-    el.classList.add('drag');
-    el.setPointerCapture(e.pointerId);
+    ligne.style.pointerEvents = 'none';
+    ligne.classList.add('drag');
+    poignee.setPointerCapture(e.pointerId);
 
     const bouger = (ev) => {
-      el.style.transform =
+      ligne.style.transform =
         'translate(' + (ev.clientX - departX) + 'px,' + (ev.clientY - departY) + 'px)';
       const cible = document.elementFromPoint(ev.clientX, ev.clientY);
       dest = cible ? cible.closest('.simu-groupe') : null;
       document.querySelectorAll('.simu-groupe')
         .forEach((z) => z.classList.toggle('survol', z === dest));
     };
-    const finir = (ev) => {
-      el.removeEventListener('pointermove', bouger);
-      el.removeEventListener('pointerup', finir);
-      el.removeEventListener('pointercancel', finir);
-      el.style.pointerEvents = '';
-      el.classList.remove('drag');
-      el.style.transform = '';
-      document.querySelectorAll('.simu-groupe')
-        .forEach((z) => z.classList.remove('survol'));
+    const finir = () => {
+      poignee.removeEventListener('pointermove', bouger);
+      poignee.removeEventListener('pointerup', finir);
+      poignee.removeEventListener('pointercancel', finir);
+      ligne.style.pointerEvents = '';
+      ligne.classList.remove('drag');
+      ligne.style.transform = '';
+      document.querySelectorAll('.simu-groupe').forEach((z) => z.classList.remove('survol'));
       if (dest && dest.dataset) {
         l.catId = dest.dataset.catId === '' ? null : dest.dataset.catId;
-        rendreSimulation(); // recalcule les groupes (les vides s'effacent)
+        rendreSimulation();
       }
     };
-    el.addEventListener('pointermove', bouger);
-    el.addEventListener('pointerup', finir);
-    el.addEventListener('pointercancel', finir);
+    poignee.addEventListener('pointermove', bouger);
+    poignee.addEventListener('pointerup', finir);
+    poignee.addEventListener('pointercancel', finir);
   });
+}
+
+// ---- Le picker : la liste des catégories EXISTANTES, en chips ----
+function ouvrirPicker(l) {
+  simuLigneChoisie = l;
+  $('simu-picker-label').textContent = l.label;
+  const liste = $('simu-picker-liste');
+  liste.innerHTML = '';
+  for (const c of categories.filter((x) => !x.archivee)) {
+    const bouton = document.createElement('button');
+    bouton.type = 'button';
+    bouton.className = 'chip' + (l.catId === c.id ? ' choisie' : '');
+    bouton.textContent = c.nom;
+    bouton.addEventListener('click', () => {
+      l.catId = c.id;           // re-taper la chip choisie = retirer la ligne ? non :
+      fermerPicker();
+      rendreSimulation();
+    });
+    liste.appendChild(bouton);
+  }
+  // Une chip « retirer la catégorie » si la ligne en a déjà une.
+  if (l.catId) {
+    const retirer = document.createElement('button');
+    retirer.type = 'button';
+    retirer.className = 'chip';
+    retirer.textContent = '✕ non catégorisée';
+    retirer.addEventListener('click', () => { l.catId = null; fermerPicker(); rendreSimulation(); });
+    liste.appendChild(retirer);
+  }
+  $('simu-picker').hidden = false;
+  $('simu-picker').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function fermerPicker() {
+  simuLigneChoisie = null;
+  $('simu-picker').hidden = true;
 }
 
 // Validation : agrège les lignes par catégorie en dépenses réelles
@@ -1194,7 +1250,6 @@ function demarrer() {
   $('bouton-purge-test').addEventListener('click', purgerDonneesTest);
 
   // — Simulation ticket (V2)
-  for (const g of GROUPES) $('simu-groupe-categorie').appendChild(new Option(g, g));
   $('bouton-simu-ticket').addEventListener('click', () => {
     genererTicketSimule();
     rendreSimulation();
@@ -1206,24 +1261,20 @@ function demarrer() {
     afficherOnglet('saisir');
   });
   $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
-  $('form-simu-categorie').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const nom = $('simu-nom-categorie').value.trim();
-    if (!nom) return;
-    if (categories.some((c) => normaliser(c.nom) === normaliser(nom))) {
-      alert('Une catégorie porte déjà ce nom.'); return;
-    }
-    const c = { id: nouvelId(), nom, groupe: $('simu-groupe-categorie').value, archivee: false };
-    categories.push(c);
-    sauvegarder();
-    peuplerSelectCategories();
-    rendreChips();
-    rendreReglages();
-    $('simu-nom-categorie').value = '';
-    $('simu-nouvelle-categorie').open = false;
+  // — Simulation ticket (V2)
+  $('bouton-simu-ticket').addEventListener('click', () => {
+    genererTicketSimule();
     rendreSimulation();
-    montrerToast('Catégorie « ' + nom + ' » créée — glisse maintenant tes lignes dessus ✔');
+    fermerPicker();
+    afficherOnglet('simulation');
   });
+  $('bouton-simu-abandonner').addEventListener('click', () => {
+    simuLignes = [];
+    fermerPicker();
+    afficherOnglet('saisir');
+  });
+  $('simu-picker-fermer').addEventListener('click', fermerPicker);
+  $('bouton-simu-valider').addEventListener('click', validerTicketSimule);
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
