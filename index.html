@@ -65,6 +65,30 @@
 
     <!-- ============ ONGLET 3 : BILAN ============ -->
     <section id="onglet-bilan" hidden>
+
+      <div class="carte">
+        <div id="segmente-periode" class="segmente">
+          <button type="button" data-mode="mois-courant" class="actif">Ce mois-ci</button>
+          <button type="button" data-mode="un-mois">Un mois précis</button>
+          <button type="button" data-mode="plage">Entre deux mois</button>
+          <button type="button" data-mode="tout">Depuis le début</button>
+        </div>
+
+        <div id="choix-un-mois" hidden>
+          <label for="select-bilan-mois">Mois</label>
+          <select id="select-bilan-mois"></select>
+        </div>
+
+        <div id="choix-plage" hidden>
+          <label for="select-bilan-debut">Du mois</label>
+          <select id="select-bilan-debut"></select>
+          <label for="select-bilan-fin">Au mois</label>
+          <select id="select-bilan-fin"></select>
+        </div>
+
+        <p id="libelle-periode" class="libelle-periode"></p>
+      </div>
+
       <div id="bilan-contenu"></div>
     </section>
 
