@@ -3,10 +3,112 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2e7d32">
   <title>Panier Pesé</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Panier Pesé</h1>
-  <p>L'app qui catégorise ton ticket de caisse ligne par ligne. Ça marche !</p>
+
+  <header>
+    <h1>🧺 Panier Pesé</h1>
+    <p id="total-mois" class="total-mois"></p>
+  </header>
+
+  <!-- Navigation : 4 boutons, chaque data-onglet pointe vers une <section> -->
+  <nav>
+    <button data-onglet="saisir" class="actif">Saisir</button>
+    <button data-onglet="historique">Historique</button>
+    <button data-onglet="bilan">Bilan</button>
+    <button data-onglet="reglages">Réglages</button>
+  </nav>
+
+  <main>
+
+    <!-- ============ ONLET 1 : SAISIE EXPRESS ============ -->
+    <section id="onglet-saisir">
+      <form id="form-depense" class="carte">
+
+        <!-- id caché : rempli uniquement quand on MODIFIE une dépense existante -->
+        <input type="hidden" id="champ-id">
+
+        <label for="champ-montant">Montant (€)</label>
+        <!-- inputmode="decimal" → clavier numérique sur Android -->
+        <input id="champ-montant" type="number" inputmode="decimal"
+               step="0.01" min="0" placeholder="0,00" required>
+
+        <!-- Chips : les catégories les plus utilisées, en un tap -->
+        <p id="chips-categories" class="chips"></p>
+
+        <label for="champ-categorie">Catégorie</label>
+        <select id="champ-categorie" required></select>
+
+        <label for="champ-date">Date</label>
+        <input id="champ-date" type="date" required>
+
+        <label for="champ-note">Note (facultative)</label>
+        <input id="champ-note" type="text" maxlength="80"
+               placeholder="ex : Intermarché, boulangerie…">
+
+        <button type="submit" id="bouton-valider" class="bouton">Ajouter la dépense</button>
+        <button type="button" id="bouton-annuler" class="bouton secondaire" hidden>
+          Abandonner la modification
+        </button>
+      </form>
+    </section>
+
+    <!-- ============ ONGLET 2 : HISTORIQUE ============ -->
+    <section id="onglet-historique" hidden>
+      <input id="champ-recherche" type="search"
+             placeholder="Rechercher (catégorie, note)…">
+      <div id="liste-depenses"></div>
+    </section>
+
+    <!-- ============ ONGLET 3 : BILAN ============ -->
+    <section id="onglet-bilan" hidden>
+      <div id="bilan-contenu"></div>
+    </section>
+
+    <!-- ============ ONGLET 4 : RÉGLAGES ============ -->
+    <section id="onglet-reglages" hidden>
+
+      <div class="carte">
+        <h2>Catégories</h2>
+        <div id="liste-categories"></div>
+
+        <details>
+          <summary>Ajouter une catégorie</summary>
+          <form id="form-categorie">
+            <label for="champ-nom-categorie">Nom</label>
+            <input id="champ-nom-categorie" type="text" maxlength="40" required>
+            <label for="champ-groupe-categorie">Groupe</label>
+            <select id="champ-groupe-categorie" required></select>
+            <button type="submit" class="bouton">Ajouter</button>
+          </form>
+        </details>
+      </div>
+
+      <div class="carte">
+        <h2>Sauvegarde</h2>
+        <p id="info-export" class="info"></p>
+        <button id="bouton-export-json" class="bouton">Exporter tout (JSON)</button>
+        <button id="bouton-export-csv" class="bouton secondaire">Exporter pour Excel (CSV)</button>
+        <button id="bouton-importer" class="bouton secondaire"
+                onclick="document.getElementById('champ-import').click()">
+          Importer un export JSON
+        </button>
+        <input type="file" id="champ-import" accept=".json,application/json" hidden>
+      </div>
+
+      <div class="carte">
+        <h2>Zone de danger</h2>
+        <button id="bouton-reinit" class="bouton danger">Effacer toutes les données</button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js"></script>
 </body>
 </html>
