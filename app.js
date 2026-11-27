@@ -23,7 +23,9 @@ const CLE_CATEGORIES_REVENUS = 'pp_categories_revenus';
 const CLE_ABONNEMENTS    = 'pp_abonnements';
 const CLE_SOLDE_INITIAL  = 'pp_solde_initial';
 const CLE_HORIZON_PROJECTION = 'pp_horizon_projection';
+const CLE_REVENU_MOYEN_TEST = 'pp_revenu_moyen_test';
 const HORIZON_PAR_DEFAUT = 3;
+const REVENU_MOYEN_TEST_DEFAUT = 200000;
 
 const COULEURS_CHOIX = [
   { nom: 'Vert', valeur: '#2e7d32' },
@@ -96,6 +98,7 @@ let bilanDimension = 'categorie';
 let simuEtatInitial = '';
 let simuAideVisible = false;
 let fermerPaletteCouleurActive = null;
+let ongletAvantReglages = null;
 
 /* ---------- 3. OUTILS GÉNÉRAUX ---------- */
 
@@ -110,7 +113,8 @@ function prefMois() {
 };
 
 function prefAccueil() {
-  return localStorage.getItem(CLE_PREF_ACCUEIL) === 'bilan' ? 'bilan' : 'saisir';
+  const valeur = localStorage.getItem(CLE_PREF_ACCUEIL);
+  return ['bilan', 'projection', 'historique'].includes(valeur) ? valeur : 'bilan';
 }
 
 // Ajoute un zéro devant si nécessaire : 7 → '07'. Les mois et jours
@@ -415,8 +419,8 @@ function chargerDepuisStockage() {
   soldeInitial = Number.isSafeInteger(soldeEnregistre) ? soldeEnregistre : 0;
   const horizonValeur = localStorage.getItem(CLE_HORIZON_PROJECTION);
   const horizonEnregistre = horizonValeur === null ? NaN : Number(horizonValeur);
-  horizonProjection = Number.isInteger(horizonEnregistre) && horizonEnregistre >= 0 && horizonEnregistre <= 12
-    ? horizonEnregistre : HORIZON_PAR_DEFAUT;
+  horizonProjection = Number.isInteger(horizonEnregistre) && horizonEnregistre >= 1 && horizonEnregistre <= 12
+    ? horizonEnregistre : horizonEnregistre === 0 ? 1 : HORIZON_PAR_DEFAUT;
   try { tickets = JSON.parse(localStorage.getItem(CLE_TICKETS)) ?? []; }
   catch { tickets = []; }
   try { labels = JSON.parse(localStorage.getItem(CLE_LABELS)) ?? []; }
@@ -469,16 +473,26 @@ function montrerToast(message) {
 /* ---------- 6. NAVIGATION PAR ONGLETS ---------- */
 
 function afficherOnglet(nom) {
+  if (nom !== 'reglages') ongletAvantReglages = nom;
+  const reglagesOuverts = nom === 'reglages';
+  const boutonReglages = $('bouton-reglages');
+  boutonReglages.setAttribute('aria-expanded', String(reglagesOuverts));
+  boutonReglages.setAttribute('aria-label',
+    reglagesOuverts ? 'Fermer les réglages' : 'Ouvrir les réglages');
+  boutonReglages.title = reglagesOuverts ? 'Fermer les réglages' : 'Réglages';
+
   // Marque le bouton actif, montre la section correspondante.
   for (const bouton of document.querySelectorAll('nav button')) {
     bouton.classList.toggle('actif', bouton.dataset.onglet === nom);
   }
+  $('bouton-saisir').hidden = !['bilan', 'projection', 'historique'].includes(nom);
   for (const section of document.querySelectorAll('main > section')) {
     section.hidden = section.id !== 'onglet-' + nom;
   }
   // Chaque onglet recharge son contenu à l'entrée (donc toujours à jour).
   if (nom === 'historique') rendreHistorique();
   if (nom === 'bilan')      rendreBilan();
+  if (nom === 'projection') rendreProjection();
   if (nom === 'reglages')   rendreReglages();
 }
 
@@ -1114,7 +1128,6 @@ function rendreBilan() {
     cents: totalMoisEvolution(m),
   }));
   conteneur.appendChild(construireCarteEvolution(lignesMois));
-  conteneur.appendChild(construireCarteProjection());
 }
 
 function dateSuivanteAbonnement(abonnement, dateCourante) {
@@ -1141,13 +1154,14 @@ function evenementsProjection() {
   const fin = dateMaxProjection();
   const evenements = [];
   for (const operation of depenses.concat(revenus)) {
-    if (operation.date <= aujourdHui || operation.date > fin) continue;
+    if (operation.source !== 'manuelle' || operation.ticketId ||
+        operation.date <= aujourdHui || operation.date > fin) continue;
     const type = revenus.includes(operation) ? 'revenu' : 'depense';
     const categorie = categorieOperation(type, operation.categorieId);
     evenements.push({
       date: operation.date, type, montant: operation.montant,
       nom: operation.note || (categorie ? categorie.nom : 'Opération prévue'),
-      note: categorie ? categorie.nom : '',
+      source: 'manuelle',
     });
   }
   for (const abonnement of abonnements) {
@@ -1209,47 +1223,101 @@ function construireCarteProjection() {
   carte.appendChild(resume);
   carte.appendChild(construireCourbeProjection(points));
 
-  const titreEvenements = document.createElement('h3');
-  titreEvenements.textContent = 'Échéances et opérations prévues';
-  carte.appendChild(titreEvenements);
-  if (!evenements.length) {
-    const vide = document.createElement('p');
-    vide.className = 'vide';
-    vide.textContent = horizonProjection === 0
-      ? 'Augmente l’horizon dans les réglages pour afficher les échéances futures.'
-      : 'Aucune échéance prévue dans cette période.';
-    carte.appendChild(vide);
-  } else {
-    for (const evenement of evenements.slice(0, 12)) {
-      const ligne = document.createElement('div');
-      ligne.className = 'projection-evenement';
-      const libelle = document.createElement('span');
-      libelle.textContent = dateCourte(evenement.date) + ' · ' + evenement.nom +
-        (evenement.aConfirmer ? ' · À confirmer' : '');
-      const montant = document.createElement('strong');
-      montant.textContent = (evenement.type === 'revenu' ? '+' : '−') +
-        formaterEuros(evenement.montant);
-      ligne.appendChild(libelle);
-      ligne.appendChild(montant);
-      if (evenement.aConfirmer) {
-        const bouton = document.createElement('button');
-        bouton.type = 'button';
-        bouton.className = 'bouton secondaire';
-        bouton.textContent = 'Confirmer';
-        bouton.addEventListener('click', () =>
-          confirmerEcheance(evenement.abonnementId, evenement.date));
-        ligne.appendChild(bouton);
-      }
-      carte.appendChild(ligne);
+  const recurrents = evenements.filter((e) => e.abonnementId && !e.aConfirmer);
+  const operationsManuelles = evenements.filter((e) => e.source === 'manuelle');
+  const echeancesAConfirmer = evenements.filter((e) => e.aConfirmer);
+  let nombreLignes = 0;
+  const ajouterLigne = (libelleTexte, type, montantCentimes, detail, evenement) => {
+    const ligne = document.createElement('div');
+    ligne.className = 'projection-evenement';
+    const libelle = document.createElement('span');
+    libelle.textContent = libelleTexte;
+    const montant = document.createElement('strong');
+    montant.textContent = (type === 'revenu' ? '+' : '−') + formaterEuros(montantCentimes);
+    ligne.append(libelle, montant);
+    if (detail) {
+      const sousTitre = document.createElement('small');
+      sousTitre.textContent = detail;
+      ligne.appendChild(sousTitre);
     }
-    if (evenements.length > 12) {
-      const suite = document.createElement('p');
-      suite.className = 'info';
-      suite.textContent = (evenements.length - 12) + ' autre(s) échéance(s) masquée(s).';
-      carte.appendChild(suite);
+    if (evenement) {
+      const bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.className = 'bouton secondaire';
+      bouton.textContent = 'Confirmer';
+      bouton.addEventListener('click', () =>
+        confirmerEcheance(evenement.abonnementId, evenement.date));
+      ligne.appendChild(bouton);
+    }
+    carte.appendChild(ligne);
+    nombreLignes++;
+  };
+
+  if (recurrents.length) {
+    const titreRecurrents = document.createElement('h3');
+    titreRecurrents.textContent = 'Récurrents sur la période';
+    carte.appendChild(titreRecurrents);
+  }
+  const revenusRecurrents = recurrents.filter((e) => e.type === 'revenu');
+  if (revenusRecurrents.length) {
+    ajouterLigne(
+      'Salaires et revenus récurrents',
+      'revenu',
+      revenusRecurrents.reduce((total, e) => total + e.montant, 0),
+      revenusRecurrents.length + ' échéance(s) sur la période'
+    );
+  }
+  const depensesRecurrentes = recurrents.filter((e) => e.type === 'depense');
+  if (depensesRecurrentes.length) {
+    ajouterLigne(
+      'Abonnements',
+      'depense',
+      depensesRecurrentes.reduce((total, e) => total + e.montant, 0),
+      depensesRecurrentes.length + ' échéance(s) sur la période'
+    );
+  }
+
+  if (operationsManuelles.length) {
+    const titreManuelles = document.createElement('h3');
+    titreManuelles.textContent = 'Opérations futures saisies à la main';
+    carte.appendChild(titreManuelles);
+    for (const operation of operationsManuelles) {
+      ajouterLigne(
+        dateCourte(operation.date) + ' · ' + operation.nom,
+        operation.type,
+        operation.montant
+      );
     }
   }
+
+  if (echeancesAConfirmer.length) {
+    const titreEcheances = document.createElement('h3');
+    titreEcheances.textContent = 'Échéances à confirmer';
+    carte.appendChild(titreEcheances);
+    for (const evenement of echeancesAConfirmer) {
+      ajouterLigne(
+        dateCourte(evenement.date) + ' · ' + evenement.nom,
+        evenement.type,
+        evenement.montant,
+        null,
+        evenement
+      );
+    }
+  }
+
+  if (!nombreLignes) {
+    const vide = document.createElement('p');
+    vide.className = 'vide';
+    vide.textContent = 'Aucune opération manuelle ou échéance prévue dans cette période.';
+    carte.appendChild(vide);
+  }
   return carte;
+}
+
+function rendreProjection() {
+  $('select-horizon-projection').value = String(horizonProjection);
+  const conteneur = $('projection-contenu');
+  conteneur.replaceChildren(construireCarteProjection());
 }
 
 function construireCourbeProjection(points) {
@@ -1311,7 +1379,8 @@ function confirmerEcheance(id, date) {
   const entree = {
     id: nouvelId(), date, montant: abonnement.montant,
     categorieId: abonnement.categorieId, note: abonnement.nom,
-    source: 'abonnement', abonnementId: abonnement.id, creeLe: new Date().toISOString(),
+    source: abonnement.source === 'test' ? 'test' : 'abonnement',
+    abonnementId: abonnement.id, creeLe: new Date().toISOString(),
   };
   (abonnement.type === 'revenu' ? revenus : depenses).push(entree);
   abonnement.prochaineDate = dateSuivanteAbonnement(abonnement, date);
@@ -1706,8 +1775,8 @@ async function importerJSON(fichier) {
     soldeInitial = Number.isSafeInteger(donnees.soldeInitialCentimes)
       ? donnees.soldeInitialCentimes : 0;
     horizonProjection = Number.isInteger(donnees.horizonProjection) &&
-      donnees.horizonProjection >= 0 && donnees.horizonProjection <= 12
-      ? donnees.horizonProjection : HORIZON_PAR_DEFAUT;
+      donnees.horizonProjection >= 1 && donnees.horizonProjection <= 12
+      ? donnees.horizonProjection : donnees.horizonProjection === 0 ? 1 : HORIZON_PAR_DEFAUT;
     tickets = Array.isArray(donnees.tickets) ? donnees.tickets : [];
     labels = Array.isArray(donnees.labels) ? donnees.labels : labels;
     sauvegarder();
@@ -1760,9 +1829,16 @@ const PROFILS_TEST = [
 ];
 
 function installerJeuDeTest() {
-  if (!confirm('Installer le jeu de test ?\n\nEfface d’abord TOUTES les données actuelles (dépenses + catégories), puis installe ~150 dépenses fictives sur 6 mois.')) return;
+  const revenuMensuelMoyen = parseMontant($('champ-revenu-moyen-test').value);
+  if (revenuMensuelMoyen === null) {
+    alert('Saisis un revenu mensuel moyen valide.');
+    return;
+  }
+  if (!confirm('Installer le jeu de test ?\n\nEfface toutes les données actuelles, puis crée des dépenses unitaires, des tickets, six revenus mensuels et des abonnements fictifs.\nRevenu mensuel moyen : ' +
+      formaterEuros(revenuMensuelMoyen) + '.')) return;
+  localStorage.setItem(CLE_REVENU_MOYEN_TEST, String(revenuMensuelMoyen));
 
-  // 1. Table rase (mêmes clés que la réinitialisation complète).
+  // 1. Efface les données budgétaires, en conservant le paramètre du générateur.
   localStorage.removeItem(CLE_DEPENSES);
   localStorage.removeItem(CLE_CATEGORIES);
   localStorage.removeItem(CLE_REVENUS);
@@ -1780,14 +1856,18 @@ function installerJeuDeTest() {
   const rng = rngDepuisGraine(20261126);
   const totalPoids = PROFILS_TEST.reduce((s, p) => s + p.poids, 0);
 
+  const idCategorieParNom = (type, nom) => {
+    const categorie = categoriesActives(type).find((c) => normaliser(c.nom) === normaliser(nom))
+      || categoriesActives(type)[0];
+    return categorie ? categorie.id : null;
+  };
+
   // Choix pondéré d'un profil : le tirage respecte les poids.
   const piocherProfil = () => {
     let r = rng() * totalPoids;
     for (const p of PROFILS_TEST) { r -= p.poids; if (r < 0) return p; }
     return PROFILS_TEST[0];
   };
-  const profilParNom = (nom) => PROFILS_TEST.find((p) => p.nom === nom) || PROFILS_TEST[0];
-
   // Résolution : nom de profil → id de catégorie réelle.
   // (Si la catégorie a été renommée ou supprimée : repli sur une catégorie active.)
   const idCategorie = () => {
@@ -1837,24 +1917,110 @@ function installerJeuDeTest() {
   depenses.push(creer(hier, 12, 3));
   depenses.push(creer(hier, 12, 7));
 
+  // 4. Un revenu par mois, au montant moyen choisi dans les réglages de test.
+  const categorieSalaire = idCategorieParNom('revenu', 'Salaire');
+  for (let i = 0; i < 6; i++) {
+    const paiement = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
+    revenus.push({
+      id: nouvelId(), date: dateLocale(paiement), montant: revenuMensuelMoyen,
+      categorieId: categorieSalaire, note: 'Salaire mensuel', source: 'test',
+      creeLe: new Date(paiement.getFullYear(), paiement.getMonth(), 1, 9).toISOString(),
+    });
+  }
+
+  // 5. Des abonnements actifs pour alimenter la projection et ses échéances.
+  const prochainMois = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() + 1, 1);
+  const dateAbonnement = (jour) =>
+    dateLocale(new Date(prochainMois.getFullYear(), prochainMois.getMonth(), jour));
+  const creerAbonnementTest = (nom, type, montant, categorieId, frequence, prochaineDate) => {
+    const [annee, mois, jourMois] = prochaineDate.split('-').map(Number);
+    abonnements.push({
+      id: nouvelId(), nom, type, montant, categorieId, frequence, prochaineDate,
+      jourMois, moisAnnee: mois - 1, archivee: false, source: 'test',
+      creeLe: new Date().toISOString(),
+    });
+  };
+  const categorieDivers = idCategorieParNom('depense', 'Divers');
+  creerAbonnementTest('Salaire', 'revenu', revenuMensuelMoyen, categorieSalaire,
+    'mensuelle', dateAbonnement(1));
+  creerAbonnementTest('Internet', 'depense', 3999, categorieDivers,
+    'mensuelle', dateAbonnement(5));
+  creerAbonnementTest('Forfait téléphonique', 'depense', 1999, categorieDivers,
+    'mensuelle', dateAbonnement(10));
+  creerAbonnementTest('Presse numérique', 'depense', 499, categorieDivers,
+    'hebdomadaire', dateAbonnement(15));
+  creerAbonnementTest('Assurance habitation', 'depense', 14500, categorieDivers,
+    'annuelle', dateAbonnement(20));
+
+  // 6. Un ticket représentatif par mois, avec ses dépenses agrégées liées.
+  const labelBio = labels.find((label) => /bio/i.test(label.nom));
+  const labelEvitable = labels.find((label) => /évitable/i.test(label.nom));
+  for (let i = 0; i < 6; i++) {
+    const premier = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
+    const dernierJour = i === 0
+      ? AUJOURDHUI.getDate()
+      : new Date(premier.getFullYear(), premier.getMonth() + 1, 0).getDate();
+    const jour = 1 + Math.floor(rng() * dernierJour);
+    const dateTicket = new Date(premier.getFullYear(), premier.getMonth(), jour);
+    const modele = TICKETS_SIMU[Math.floor(rng() * TICKETS_SIMU.length)];
+    const lignes = modele.lignes.map(([libelle, cents]) => {
+      const regle = REGLES_SIMU.find((r) =>
+        new RegExp(r.mot).test(libelle) && categories.some((c) => c.nom === r.cat));
+      const categorie = regle ? categories.find((c) => c.nom === regle.cat) : null;
+      const ligneLabels = [];
+      if (labelBio && /POMMES|TOMATES/.test(libelle) && rng() < 0.6) {
+        ligneLabels.push(labelBio.id);
+      }
+      if (labelEvitable && /CIGARETTES|VIN/.test(libelle)) {
+        ligneLabels.push(labelEvitable.id);
+      }
+      return { id: nouvelId(), label: libelle, cents, catId: categorie ? categorie.id : null, labels: ligneLabels };
+    });
+    const ticket = {
+      id: nouvelId(), magasin: modele.magasin, date: dateLocale(dateTicket),
+      lignes, labels: [], source: 'test',
+      creeLe: new Date(dateTicket.getFullYear(), dateTicket.getMonth(), dateTicket.getDate(), 12).toISOString(),
+    };
+    tickets.push(ticket);
+    const totaux = new Map();
+    for (const ligne of lignes) {
+      if (ligne.catId) totaux.set(ligne.catId, (totaux.get(ligne.catId) || 0) + ligne.cents);
+    }
+    for (const [categorieId, montant] of totaux) {
+      depenses.push({
+        id: nouvelId(), date: ticket.date, montant, categorieId,
+        note: ticket.magasin, source: 'test', ticketId: ticket.id,
+        creeLe: ticket.creeLe,
+      });
+    }
+  }
+
   sauvegarder();
   rafraichirTout();
   afficherOnglet('historique');
-  montrerToast(depenses.length + ' dépenses de test installées ✔');
+  const depensesUnitaires = depenses.filter((depense) => !depense.ticketId).length;
+  montrerToast('Jeu installé : ' + depensesUnitaires + ' dépenses unitaires, ' +
+    tickets.length + ' tickets, ' + revenus.length + ' revenus et ' +
+    abonnements.length + ' abonnements ✔');
 }
 
 // Retire UNIQUEMENT les enregistrements marqués source: 'test' :
 // les vraies données éventuelles sont préservées.
 function purgerDonneesTest() {
-  const avant = depenses.length;
+  const avantDepenses = depenses.length;
+  const avantRevenus = revenus.length;
+  const avantTickets = tickets.length;
+  const avantAbonnements = abonnements.length;
   depenses = depenses.filter((d) => d.source !== 'test');
+  revenus = revenus.filter((r) => r.source !== 'test');
   tickets = tickets.filter((t) => t.source !== 'test');
-  if (avant === depenses.length) { montrerToast('Aucune donnée de test à retirer'); return; }
+  abonnements = abonnements.filter((a) => a.source !== 'test');
+  const retirees = avantDepenses !== depenses.length || avantRevenus !== revenus.length ||
+    avantTickets !== tickets.length || avantAbonnements !== abonnements.length;
+  if (!retirees) { montrerToast('Aucune donnée de test à retirer'); return; }
   sauvegarder();
-  afficherTotalMois();
-  rendreHistorique();
-  rendreBilan();
-  montrerToast((avant - depenses.length) + ' dépenses de test retirées');
+  rafraichirTout();
+  montrerToast('Données de test retirées');
 }
 
 /* ====== fin outils de test — À RETIRER ====== */
@@ -2232,6 +2398,7 @@ function rafraichirTout() {
   afficherTotalMois();
   rendreHistorique();
   rendreBilan();
+  rendreProjection();
   rendreReglages();
 }
 
@@ -2241,6 +2408,13 @@ function demarrer() {
   for (const bouton of document.querySelectorAll('nav button')) {
     bouton.addEventListener('click', () => afficherOnglet(bouton.dataset.onglet));
   }
+  $('bouton-saisir').addEventListener('click', () => afficherOnglet('saisir'));
+  $('bouton-reglages').addEventListener('click', () => {
+    const nom = $('onglet-reglages').hidden
+      ? 'reglages'
+      : (ongletAvantReglages || prefAccueil());
+    afficherOnglet(nom);
+  });
 
   // — Saisie
   $('form-depense').addEventListener('submit', (e) => {
@@ -2312,6 +2486,21 @@ function demarrer() {
     localStorage.setItem(CLE_PREF_ACCUEIL, this.value);
     montrerToast('Page d’accueil enregistrée ✔');
   });
+  $('select-horizon-projection').value = String(horizonProjection);
+  $('select-horizon-projection').addEventListener('change', function () {
+    const valeur = Number(this.value);
+    if (!Number.isInteger(valeur) || valeur < 1 || valeur > 12) {
+      alert('L’horizon doit être compris entre 1 et 12 mois.');
+      this.value = String(horizonProjection);
+      return;
+    }
+    horizonProjection = valeur;
+    $('champ-date').max = dateMaxProjection();
+    $('champ-date-abonnement').max = dateMaxProjection();
+    sauvegarder();
+    rendreProjection();
+    montrerToast('Horizon de projection enregistré ✔');
+  });
   $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
   $('champ-solde-initial').addEventListener('change', function () {
     const valeur = Number(String(this.value).replace(',', '.'));
@@ -2323,22 +2512,8 @@ function demarrer() {
     soldeInitial = Math.round(valeur * 100);
     sauvegarder();
     rendreBilan();
+    rendreProjection();
     montrerToast('Solde de départ enregistré ✔');
-  });
-  $('select-horizon-projection').value = String(horizonProjection);
-  $('select-horizon-projection').addEventListener('change', function () {
-    const valeur = Number(this.value);
-    if (!Number.isInteger(valeur) || valeur < 0 || valeur > 12) {
-      alert('L’horizon doit être compris entre 0 et 12 mois.');
-      this.value = String(horizonProjection);
-      return;
-    }
-    horizonProjection = valeur;
-    $('champ-date').max = dateMaxProjection();
-    $('champ-date-abonnement').max = dateMaxProjection();
-    sauvegarder();
-    rendreBilan();
-    montrerToast('Horizon de projection enregistré ✔');
   });
   $('form-categorie').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2457,9 +2632,11 @@ function demarrer() {
     localStorage.removeItem(CLE_ABONNEMENTS);
     localStorage.removeItem(CLE_SOLDE_INITIAL);
     localStorage.removeItem(CLE_HORIZON_PROJECTION);
+    localStorage.removeItem(CLE_REVENU_MOYEN_TEST);
     localStorage.removeItem(CLE_TICKETS);
     localStorage.removeItem(CLE_LABELS);
     localStorage.removeItem(CLE_DERNIER_EXPORT);
+    $('champ-revenu-moyen-test').value = (REVENU_MOYEN_TEST_DEFAUT / 100).toFixed(2);
     chargerDepuisStockage();
     categorieChoisie = null;
     rafraichirTout();
@@ -2510,6 +2687,22 @@ function demarrer() {
   });
 
   // — Outils de test (À RETIRER en version finale)
+  const revenuMoyenTestEnregistre = localStorage.getItem(CLE_REVENU_MOYEN_TEST);
+  const revenuMoyenTestCentimes = revenuMoyenTestEnregistre === null
+    ? REVENU_MOYEN_TEST_DEFAUT : Number(revenuMoyenTestEnregistre);
+  $('champ-revenu-moyen-test').value = (Number.isSafeInteger(revenuMoyenTestCentimes) &&
+    revenuMoyenTestCentimes > 0 ? revenuMoyenTestCentimes : REVENU_MOYEN_TEST_DEFAUT) / 100;
+  $('champ-revenu-moyen-test').addEventListener('change', function () {
+    const montant = parseMontant(this.value);
+    if (montant === null) {
+      alert('Saisis un revenu mensuel moyen valide.');
+      this.value = (REVENU_MOYEN_TEST_DEFAUT / 100).toFixed(2);
+      localStorage.setItem(CLE_REVENU_MOYEN_TEST, String(REVENU_MOYEN_TEST_DEFAUT));
+      return;
+    }
+    this.value = (montant / 100).toFixed(2);
+    localStorage.setItem(CLE_REVENU_MOYEN_TEST, String(montant));
+  });
   $('bouton-jeu-test').addEventListener('click', installerJeuDeTest);
   $('bouton-purge-test').addEventListener('click', purgerDonneesTest);
 
@@ -2568,6 +2761,7 @@ function demarrer() {
   afficherTotalMois();
   rendreHistorique();
   rendreBilan();
+  rendreProjection();
   rendreReglages();
   rendreInfoExport();
   rendreListeLabels();

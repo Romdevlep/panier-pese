@@ -114,11 +114,14 @@ virgule décimale, BOM UTF-8 — Excel FR en un double-clic), rappel de la date
 de dernière sauvegarde. Rotation conseillée : garder les 5 derniers exports
 datés.
 
-### 3.9 Réglages
-Onglets : Bilan, Saisir, Historique, Réglages. Préférences : mois
-calendaire/glissant, page d'accueil (Saisir ou Bilan), solde actuel de départ
-et horizon de projection (0 à 12 mois). Zone de danger : effacement avec
-double confirmation.
+### 3.9 Navigation et réglages
+La navigation principale propose les onglets Bilan, Projection et Historique.
+La saisie est une action accessible via un bouton dédié ; les Réglages sont
+accessibles depuis la roue dentée de l'en-tête. La page d'accueil peut être
+choisie parmi Bilan, Projection et Historique. Les préférences comprennent
+également le mois calendaire/glissant, le solde actuel de départ et l'horizon
+de projection (0 à 12 mois). Zone de danger : effacement avec double
+confirmation.
 
 ## 4. Modèle de données
 
@@ -220,5 +223,7 @@ projection et date du dernier export.
 
 _Cadrage : application offline-first, aucune donnée transmise à un serveur ;
 dépôt public sans secret. Les outils de test intégrés au prototype (jeu de
-données à graine fixe, tickets simulés, purge ciblée `source: 'test'`) sont
-des instruments de développement, à retirer en version finale._
+données à graine fixe avec dépenses unitaires, tickets, six revenus mensuels
+au montant moyen paramétrable et abonnements, simulation de ticket, purge
+ciblée `source: 'test'`) sont des instruments de développement, à retirer en
+version finale._

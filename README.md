@@ -40,8 +40,9 @@ niveau de détail.
   de mois, ou depuis le début ; répartition des dépenses par catégorie ou par
   label (sans ligne « Sans label »), revenus par catégorie, courbe d'évolution
   sur 6 mois et projection séparée du solde futur
-- 🧭 **Navigation et préférences** : onglets Bilan, Saisir, Historique,
-  Réglages ; choix de la page d'accueil (Bilan ou Saisir)
+- 🧭 **Navigation et préférences** : onglets Bilan, Projection et Historique ;
+  bouton Saisir toujours accessible et Réglages via la roue dentée ; choix de
+  la page d'accueil parmi ces trois onglets
 - 🔒 **100 % local** : les données ne quittent jamais l'appareil
 - 📥 Export / import JSON complet (opérations, catégories, abonnements et
   réglages budgétaires) et export CSV signé pour Excel
@@ -69,10 +70,11 @@ niveau de détail.
   et l'ergonomie (écran de validation de ticket, drag & drop, picker) avant
   d'écrire le gros œuvre. Presque tout le prototype survit en phase D.
 - **Comment tester ?** Ouvrir `index.html` dans un navigateur. Un jeu de test
-  reproductible (~150 dépenses sur 6 mois) est disponible dans
-  **Réglages → Zone de danger**. Pour essayer la simulation d'un ticket,
-  aller dans **Saisir** et cliquer sur **Simuler un ticket (V2)**. La
-  simulation de ticket concerne les dépenses ; le bouton n’apparaît pas pour
+  reproductible (dépenses unitaires, tickets, revenus sur 6 mois et
+  abonnements) est disponible dans **Réglages → Zone de danger** ; le revenu
+  mensuel moyen du jeu est paramétrable sur place. Pour essayer la simulation
+  d'un ticket, aller dans **Saisir** et cliquer sur **Simuler un ticket (V2)**.
+  La simulation de ticket concerne les dépenses ; le bouton n’apparaît pas pour
   la saisie des revenus ni pendant la modification d’une opération.
   Pour essayer le budget global, saisir un revenu, régler le solde de départ
   et l’horizon dans **Réglages**, puis ajouter un abonnement avec une échéance

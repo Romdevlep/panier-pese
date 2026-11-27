@@ -10,21 +10,26 @@
 <body>
 
   <header>
-    <h1>🧺 Panier Pesé</h1>
+    <div class="entete-haut">
+      <h1>🧺 Panier Pesé</h1>
+      <button id="bouton-reglages" type="button" class="bouton-reglages"
+              aria-label="Ouvrir les réglages" aria-controls="onglet-reglages"
+              aria-expanded="false" title="Réglages">⚙️</button>
+    </div>
     <p id="total-mois" class="total-mois"></p>
   </header>
 
-  <!-- Navigation : 4 boutons, chaque data-onglet pointe vers une <section> -->
+  <!-- Navigation des vues consultées régulièrement -->
   <nav>
     <button data-onglet="bilan">Bilan</button>
-    <button data-onglet="saisir" class="actif">Saisir</button>
+    <button data-onglet="projection">Projection</button>
     <button data-onglet="historique">Historique</button>
-    <button data-onglet="reglages">Réglages</button>
   </nav>
+  <button id="bouton-saisir" type="button" class="action-saisir">＋ Saisir</button>
 
   <main>
 
-    <!-- ============ ONLET 1 : SAISIE EXPRESS ============ -->
+    <!-- ============ SAISIE EXPRESS ============ -->
     <section id="onglet-saisir">
       <form id="form-depense" class="carte">
 
@@ -68,14 +73,14 @@
       </form>
     </section>
 
-    <!-- ============ ONGLET 2 : HISTORIQUE ============ -->
+    <!-- ============ HISTORIQUE ============ -->
     <section id="onglet-historique" hidden>
       <input id="champ-recherche" type="search"
              placeholder="Rechercher (catégorie, note)…">
       <div id="liste-depenses"></div>
     </section>
 
-    <!-- ============ ONGLET 3 : BILAN ============ -->
+    <!-- ============ BILAN ============ -->
     <section id="onglet-bilan" hidden>
 
       <div class="carte">
@@ -110,7 +115,28 @@
       <div id="bilan-contenu"></div>
     </section>
 
-    <!-- ============ ONGLET 4 : RÉGLAGES ============ -->
+    <section id="onglet-projection" hidden>
+      <div class="carte">
+        <label for="select-horizon-projection">Horizon de projection</label>
+        <select id="select-horizon-projection">
+          <option value="1">+1 mois</option>
+          <option value="2">+2 mois</option>
+          <option value="3">+3 mois</option>
+          <option value="4">+4 mois</option>
+          <option value="5">+5 mois</option>
+          <option value="6">+6 mois</option>
+          <option value="7">+7 mois</option>
+          <option value="8">+8 mois</option>
+          <option value="9">+9 mois</option>
+          <option value="10">+10 mois</option>
+          <option value="11">+11 mois</option>
+          <option value="12">+12 mois</option>
+        </select>
+      </div>
+      <div id="projection-contenu"></div>
+    </section>
+
+    <!-- ============ RÉGLAGES ============ -->
     <section id="onglet-reglages" hidden>
 
       <div class="carte">
@@ -211,34 +237,23 @@
         </select>
         <label for="select-pref-accueil">Page à l’ouverture</label>
         <select id="select-pref-accueil">
-          <option value="saisir">Saisir</option>
           <option value="bilan">Bilan</option>
+          <option value="projection">Projection</option>
+          <option value="historique">Historique</option>
         </select>
         <label for="champ-solde-initial">Solde actuel de départ (€)</label>
         <input id="champ-solde-initial" type="number" step="0.01" inputmode="decimal" value="0">
-        <label for="select-horizon-projection">Projection future</label>
-        <select id="select-horizon-projection">
-          <option value="0">0 mois</option>
-          <option value="1">1 mois</option>
-          <option value="2">2 mois</option>
-          <option value="3">3 mois</option>
-          <option value="4">4 mois</option>
-          <option value="5">5 mois</option>
-          <option value="6">6 mois</option>
-          <option value="7">7 mois</option>
-          <option value="8">8 mois</option>
-          <option value="9">9 mois</option>
-          <option value="10">10 mois</option>
-          <option value="11">11 mois</option>
-          <option value="12">12 mois</option>
-        </select>
       </div>
 
       <div class="carte">
         <h2>Zone de danger</h2>
         <!-- ====== Outils de test — À RETIRER en version finale ====== -->
+        <label for="champ-revenu-moyen-test">Revenu mensuel moyen du jeu de test (€)</label>
+        <input id="champ-revenu-moyen-test" type="number" inputmode="decimal"
+               step="0.01" min="0.01" value="2000">
+        <p class="info">Utilisé pour les six salaires fictifs et l’abonnement mensuel associé.</p>
         <button id="bouton-jeu-test" class="bouton secondaire">
-          Installer un jeu de test (≈150 dépenses, 6 mois)
+          Installer un jeu de test (dépenses, tickets, revenus, abonnements)
         </button>
         <button id="bouton-purge-test" class="bouton secondaire">
           Retirer les données de test
