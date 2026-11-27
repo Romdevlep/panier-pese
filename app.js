@@ -83,7 +83,7 @@ const CATEGORIES_REVENUS_DEPART = ['Salaire', 'Prestations', 'Remboursements', '
 // d'arrondi des nombres à virgule flottante. On convertit à l'affichage.
 let depenses   = [];  // { id, date 'AAAA-MM-JJ', montant, categorieId, note, source, creeLe }
 let revenus = [];
-let categories = [];  // { id, nom, couleur, archivee } ; groupe toléré dans les anciennes données
+let categories = [];  // { id, nom, couleur, archivee, suiviEvolution } ; groupe toléré dans les anciennes données
 let categoriesRevenus = [];
 let abonnements = [];
 let soldeInitial = 0; // centimes
@@ -96,13 +96,14 @@ let editionType = 'depense';
 let tickets = [];              // { id, magasin, date, lignes, source, creeLe }
 let simuTicketEnEdition = null; // id du ticket affiché (null = nouveau)
 let simuMode = 'creation';      // 'creation' | 'consultation' | 'edition'
-let labels = [];       // { id, nom, couleur, archivee }
+let labels = [];       // { id, nom, couleur, archivee, suiviEvolution }
 let simuLabels = [];   // labels posés sur le ticket EN COURS de création/édition
 let bilanDimension = 'categorie';
 let simuEtatInitial = '';
 let simuAideVisible = false;
 let fermerPaletteCouleurActive = null;
 let ongletAvantReglages = null;
+let editionCategorieLabel = null;
 
 /* ---------- 3. OUTILS GÉNÉRAUX ---------- */
 
@@ -512,17 +513,6 @@ function creerSelecteurCouleur(couleurInitiale, onChange, nom, compact = false) 
   return selecteur;
 }
 
-function afficherSelecteurCouleurFormulaire(conteneurId, champId, couleurInitiale, nom) {
-  const champ = $(champId);
-  champ.value = couleurInitiale;
-  const conteneur = $(conteneurId);
-  conteneur.replaceChildren(creerSelecteurCouleur(
-    couleurInitiale,
-    (couleur) => { champ.value = couleur; },
-    nom
-  ));
-}
-
 // État des labels pour un ticket : plein (sur le ticket) ou partiel (≥ 1 ligne).
 // On parcoure TOUS les labels (archivés compris) : une référence passée doit
 // continuer à s'afficher.
@@ -639,8 +629,8 @@ function montrerToast(message) {
 /* ---------- 6. NAVIGATION PAR ONGLETS ---------- */
 
 function afficherOnglet(nom) {
-  if (nom !== 'reglages') ongletAvantReglages = nom;
-  const reglagesOuverts = nom === 'reglages';
+  if (nom !== 'reglages' && nom !== 'edition-categorie-label') ongletAvantReglages = nom;
+  const reglagesOuverts = nom === 'reglages' || nom === 'edition-categorie-label';
   const boutonReglages = $('bouton-reglages');
   boutonReglages.setAttribute('aria-expanded', String(reglagesOuverts));
   boutonReglages.setAttribute('aria-label',
@@ -1002,10 +992,12 @@ function construireCarteEvolution(lignes) {
   selectPerimetre.setAttribute('aria-label', 'Périmètre de l’évolution');
   selectPerimetre.appendChild(new Option('Toutes les dépenses', 'tout'));
 
-  if (categories.length) {
+  const categoriesSuivies = categories.filter((c) => c.suiviEvolution !== false);
+  const labelsSuivis = labels.filter((l) => l.suiviEvolution !== false);
+  if (categoriesSuivies.length) {
     const groupeCategories = document.createElement('optgroup');
     groupeCategories.label = 'Catégories';
-    for (const categorie of categories) {
+    for (const categorie of categoriesSuivies) {
       groupeCategories.appendChild(new Option(
         categorie.nom + (categorie.archivee ? ' (archivée)' : ''),
         'categorie:' + categorie.id
@@ -1013,10 +1005,10 @@ function construireCarteEvolution(lignes) {
     }
     selectPerimetre.appendChild(groupeCategories);
   }
-  if (labels.length) {
+  if (labelsSuivis.length) {
     const groupeLabels = document.createElement('optgroup');
     groupeLabels.label = 'Labels';
-    for (const label of labels) {
+    for (const label of labelsSuivis) {
       groupeLabels.appendChild(new Option(
         label.nom + (label.archivee ? ' (archivé)' : ''),
         'label:' + label.id
@@ -1025,10 +1017,6 @@ function construireCarteEvolution(lignes) {
     selectPerimetre.appendChild(groupeLabels);
   }
   selectPerimetre.value = bilanPerimetre;
-  if (!selectPerimetre.value) {
-    bilanPerimetre = 'tout';
-    selectPerimetre.value = 'tout';
-  }
   carte.appendChild(libellePerimetre);
   carte.appendChild(selectPerimetre);
 
@@ -1276,6 +1264,12 @@ function rendreBilan() {
 
   // — Évolution 6 mois : vue de tendance, toujours en MOIS CALENDARIRES,
   //   ancrée sur aujourd'hui (indépendante de la période sélectionnée).
+  const [typePerimetre, idPerimetre] = bilanPerimetre.split(':');
+  if (bilanPerimetre !== 'tout') {
+    const element = typePerimetre === 'categorie' ? categorieParId(idPerimetre)
+      : typePerimetre === 'label' ? labelParId(idPerimetre) : null;
+    if (!element || element.suiviEvolution === false) bilanPerimetre = 'tout';
+  }
   const moisCalendaire = dateLocale().slice(0, 7);
   const sixMois = [];
   const aujourdhui = new Date();
@@ -1555,6 +1549,23 @@ function confirmerEcheance(id, date) {
 
 /* ---------- 10. ONGLET RÉGLAGES : CATÉGORIES ---------- */
 
+function ouvrirEditionCategorieLabel(type, objet) {
+  editionCategorieLabel = { type, objet, couleur: type === 'categorie' ? couleurCategorie(objet) : objet.couleur || '#9e9e9e' };
+  $('titre-edition-categorie-label').textContent = type === 'categorie'
+    ? 'Modifier la catégorie' : 'Modifier le label';
+  const nom = $('champ-edition-nom');
+  nom.value = objet.nom;
+  nom.maxLength = type === 'categorie' ? 40 : 30;
+  $('champ-edition-suivi').checked = objet.suiviEvolution !== false;
+  $('selecteur-edition-couleur').replaceChildren(creerSelecteurCouleur(
+    editionCategorieLabel.couleur,
+    (couleur) => { editionCategorieLabel.couleur = couleur; },
+    type === 'categorie' ? 'la catégorie' : 'le label'
+  ));
+  afficherOnglet('edition-categorie-label');
+  nom.focus();
+}
+
 function construireLigneCategorie(c) {
   const ligne = document.createElement('div');
   ligne.className = 'categorie-ligne' + (c.archivee ? ' archivee' : '');
@@ -1579,33 +1590,12 @@ function construireLigneCategorie(c) {
   const boutons = document.createElement('div');
   boutons.className = 'boutons';
 
-  const selecteurCouleur = creerSelecteurCouleur(
-    couleurCategorie(c),
-    (nouvelleCouleur) => {
-      c.couleur = nouvelleCouleur;
-      sauvegarder();
-      rendreReglages();
-    },
-    'la catégorie ' + c.nom,
-    true
-  );
-  // Renommer (version prototype : prompt() ; on soignera l'écran en phase D).
   const boutonModif = document.createElement('button');
+  boutonModif.type = 'button';
   boutonModif.textContent = '✏️';
-  boutonModif.title = 'Renommer';
-  boutonModif.addEventListener('click', () => {
-    const nouveau = (prompt('Nouveau nom :', c.nom) || '').trim();
-    if (!nouveau) return;
-    const doublon = categories.some(
-      (x) => x.id !== c.id && normaliser(x.nom) === normaliser(nouveau)
-    );
-    if (doublon) { alert('Une catégorie porte déjà ce nom.'); return; }
-    c.nom = nouveau;
-    sauvegarder();
-    peuplerSelectCategories();
-    rendreChips();
-    rendreReglages();
-  });
+  boutonModif.title = 'Modifier la catégorie ' + c.nom;
+  boutonModif.setAttribute('aria-label', boutonModif.title);
+  boutonModif.addEventListener('click', () => ouvrirEditionCategorieLabel('categorie', c));
   boutons.appendChild(boutonModif);
 
   // Archiver plutôt que supprimer : l'historique reste cohérent.
@@ -1643,7 +1633,6 @@ function construireLigneCategorie(c) {
   });
   boutons.appendChild(boutonSuppr);
 
-  boutons.appendChild(selecteurCouleur);
   ligne.appendChild(boutons);
   return ligne;
 }
@@ -1665,27 +1654,12 @@ function rendreListeLabels() {
     const boutons = document.createElement('div');
     boutons.className = 'boutons';
 
-    const selecteurCouleur = creerSelecteurCouleur(
-      lb.couleur || '#9e9e9e',
-      (nouvelleCouleur) => {
-        lb.couleur = nouvelleCouleur;
-        sauvegarder();
-        rendreListeLabels();
-      },
-      'le label ' + lb.nom,
-      true
-    );
-
     const renommer = document.createElement('button');
+    renommer.type = 'button';
     renommer.textContent = '✏️';
-    renommer.addEventListener('click', () => {
-      const nouveau = (prompt('Nouveau nom :', lb.nom) || '').trim();
-      if (!nouveau || categories.concat(labels).some(
-        (x) => x.id !== lb.id && normaliser(x.nom) === normaliser(nouveau))) return;
-      lb.nom = nouveau;
-      sauvegarder();
-      rendreListeLabels();
-    });
+    renommer.title = 'Modifier le label ' + lb.nom;
+    renommer.setAttribute('aria-label', renommer.title);
+    renommer.addEventListener('click', () => ouvrirEditionCategorieLabel('label', lb));
     const archiver = document.createElement('button');
     archiver.textContent = lb.archivee ? '↩️' : '📦';
     archiver.addEventListener('click', () => {
@@ -1693,7 +1667,6 @@ function rendreListeLabels() {
       sauvegarder();
       rendreListeLabels();
     });
-    boutons.appendChild(selecteurCouleur);
     boutons.appendChild(renommer);
     boutons.appendChild(archiver);
 
@@ -2606,10 +2579,32 @@ function demarrer() {
   }
   $('bouton-saisir').addEventListener('click', () => afficherOnglet('saisir'));
   $('bouton-reglages').addEventListener('click', () => {
-    const nom = $('onglet-reglages').hidden
+    const nom = $('onglet-reglages').hidden && $('onglet-edition-categorie-label').hidden
       ? 'reglages'
       : (ongletAvantReglages || prefAccueil());
     afficherOnglet(nom);
+  });
+
+  $('bouton-annuler-edition-categorie-label').addEventListener('click', () => afficherOnglet('reglages'));
+  $('form-edition-categorie-label').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!editionCategorieLabel) return;
+    const { type, objet, couleur } = editionCategorieLabel;
+    const nom = $('champ-edition-nom').value.trim();
+    if (!nom) return;
+    const collection = type === 'categorie' ? categories : categories.concat(labels);
+    if (collection.some((x) => x !== objet && normaliser(x.nom) === normaliser(nom))) {
+      alert(type === 'categorie' ? 'Une catégorie porte déjà ce nom.' : 'Ce nom est déjà utilisé.');
+      return;
+    }
+    objet.nom = nom;
+    objet.couleur = couleur;
+    objet.suiviEvolution = $('champ-edition-suivi').checked;
+    sauvegarder();
+    peuplerSelectCategories();
+    rendreChips();
+    afficherOnglet('reglages');
+    montrerToast('Modification enregistrée ✔');
   });
 
   // — Saisie
@@ -2669,18 +2664,6 @@ function demarrer() {
   $('champ-recherche').addEventListener('input', rendreHistorique);
 
   // — Réglages : formulaire d'ajout de catégorie
-  afficherSelecteurCouleurFormulaire(
-    'selecteur-couleur-categorie',
-    'champ-couleur-categorie',
-    PALETTE_CATEGORIES[0],
-    'la nouvelle catégorie'
-  );
-  afficherSelecteurCouleurFormulaire(
-    'selecteur-couleur-label',
-    'champ-couleur-label',
-    PALETTE_LABELS[2],
-    'le nouveau label'
-  );
   $('select-pref-accueil').value = prefAccueil();
   $('select-pref-accueil').addEventListener('change', function () {
     localStorage.setItem(CLE_PREF_ACCUEIL, this.value);
@@ -2736,18 +2719,13 @@ function demarrer() {
     categories.push({
       id: nouvelId(),
       nom,
-      couleur: $('champ-couleur-categorie').value || PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
+      couleur: PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
       archivee: false,
+      suiviEvolution: true,
     });
 
     sauvegarder();
     $('champ-nom-categorie').value = '';
-    afficherSelecteurCouleurFormulaire(
-      'selecteur-couleur-categorie',
-      'champ-couleur-categorie',
-      PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length],
-      'la nouvelle catégorie'
-    );
     peuplerSelectCategories();
     rendreChips();
     rendreReglages();
@@ -2815,17 +2793,12 @@ function demarrer() {
     if (!nom || labels.concat(categories).some((x) => normaliser(x.nom) === normaliser(nom))) return;
     labels.push({
       id: nouvelId(), nom,
-      couleur: $('champ-couleur-label').value || PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
+      couleur: PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
       archivee: false,
+      suiviEvolution: true,
     });
     sauvegarder();
     $('champ-nom-label').value = '';
-    afficherSelecteurCouleurFormulaire(
-      'selecteur-couleur-label',
-      'champ-couleur-label',
-      PALETTE_LABELS[labels.length % PALETTE_LABELS.length],
-      'le nouveau label'
-    );
     rendreListeLabels();
     montrerToast('Label ajouté ✔');
   });

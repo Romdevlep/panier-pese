@@ -144,6 +144,22 @@
       <div id="projection-contenu"></div>
     </section>
 
+    <section id="onglet-edition-categorie-label" hidden>
+      <form id="form-edition-categorie-label" class="carte">
+        <h2 id="titre-edition-categorie-label"></h2>
+        <label for="champ-edition-nom">Nom</label>
+        <input id="champ-edition-nom" type="text" required>
+        <label>Couleur</label>
+        <div id="selecteur-edition-couleur" class="selecteur-couleur-form"></div>
+        <label class="option-suivi">
+          <input id="champ-edition-suivi" type="checkbox">
+          Proposer dans l’évolution du bilan
+        </label>
+        <button type="submit" class="bouton">Enregistrer</button>
+        <button type="button" id="bouton-annuler-edition-categorie-label" class="bouton secondaire">Annuler</button>
+      </form>
+    </section>
+
     <!-- ============ RÉGLAGES ============ -->
     <section id="onglet-reglages" hidden>
 
@@ -156,9 +172,6 @@
           <form id="form-categorie">
             <label for="champ-nom-categorie">Nom</label>
             <input id="champ-nom-categorie" type="text" maxlength="40" required>
-            <label>Couleur</label>
-            <div id="selecteur-couleur-categorie" class="selecteur-couleur-form"></div>
-            <input id="champ-couleur-categorie" type="hidden" value="#2e7d32">
             <button type="submit" class="bouton">Ajouter</button>
           </form>
         </details>
@@ -174,9 +187,6 @@
           <form id="form-label">
             <label for="champ-nom-label">Nom</label>
             <input id="champ-nom-label" type="text" maxlength="30" required>
-            <label>Couleur</label>
-            <div id="selecteur-couleur-label" class="selecteur-couleur-form"></div>
-            <input id="champ-couleur-label" type="hidden" value="#2e7d32">
             <button type="submit" class="bouton">Ajouter</button>
           </form>
         </details>
