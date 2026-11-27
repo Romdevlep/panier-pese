@@ -78,6 +78,50 @@ input, select {
   background: var(--carte); color: var(--texte);
 }
 input:focus, select:focus { outline: 2px solid var(--vert); border-color: var(--vert); }
+.bilan-dimension { font-size: 1.05rem; font-weight: 700; }
+.date-saisie {
+  display: flex; align-items: center; position: relative;
+  border: 1px solid #cbd2cb; border-radius: 10px; background: var(--carte);
+}
+.date-saisie:focus-within { outline: 2px solid var(--vert); border-color: var(--vert); }
+.date-saisie > input[type="text"] {
+  flex: 1; min-width: 0; border: 0; border-radius: 10px;
+  background: transparent; outline: 0;
+}
+.date-saisie > input[type="text"]:focus { outline: 0; border-color: transparent; }
+.bouton-calendrier {
+  flex: 0 0 48px; width: 48px; height: 48px; padding: 0; margin: 0;
+  border: 0; border-left: 1px solid var(--bord); border-radius: 0 9px 9px 0;
+  background: transparent; color: var(--texte); font-size: 1.2rem;
+}
+.bouton-calendrier:focus-visible { outline: 2px solid var(--vert); outline-offset: 2px; }
+.calendrier-personnalise {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+  width: min(320px, calc(100vw - 32px)); padding: 12px;
+  border: 1px solid var(--bord); border-radius: 12px;
+  background: var(--carte); box-shadow: 0 4px 16px #0003;
+}
+.calendrier-entete { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calendrier-mois { font-weight: 600; text-transform: capitalize; }
+.calendrier-navigation {
+  width: 36px; height: 36px; border: 1px solid var(--bord);
+  border-radius: 8px; background: var(--carte); color: var(--texte); font-size: 1.2rem;
+}
+.calendrier-grille { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.calendrier-semaine, .calendrier-jour, .calendrier-vide {
+  display: grid; place-items: center; min-width: 0; aspect-ratio: 1;
+}
+.calendrier-semaine { color: var(--texte-secondaire); font-size: 0.8rem; }
+.calendrier-jour {
+  border: 0; border-radius: 8px; background: transparent; color: var(--texte);
+}
+.calendrier-jour:hover:not(:disabled) { background: var(--vert-clair); }
+.calendrier-jour:disabled { color: #aeb4ae; }
+.calendrier-jour.aujourdhui { outline: 1px solid var(--vert); }
+.calendrier-jour.selectionne { background: var(--vert); color: #fff; font-weight: 600; }
+.calendrier-navigation:focus-visible, .calendrier-jour:focus-visible {
+  outline: 2px solid var(--vert); outline-offset: 2px;
+}
 
 /* ---------- Boutons ---------- */
 .bouton {

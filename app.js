@@ -22,6 +22,8 @@ const CLE_REVENUS        = 'pp_revenus';
 const CLE_CATEGORIES_REVENUS = 'pp_categories_revenus';
 const CLE_ABONNEMENTS    = 'pp_abonnements';
 const CLE_SOLDE_INITIAL  = 'pp_solde_initial';
+const CLE_DATE_SOLDE_INITIAL = 'pp_date_solde_initial';
+const CLE_SOLDE_INITIAL_VERROUILLE = 'pp_solde_initial_verrouille';
 const CLE_HORIZON_PROJECTION = 'pp_horizon_projection';
 const CLE_REVENU_MOYEN_TEST = 'pp_revenu_moyen_test';
 const HORIZON_PAR_DEFAUT = 3;
@@ -85,6 +87,8 @@ let categories = [];  // { id, nom, couleur, archivee } ; groupe toléré dans l
 let categoriesRevenus = [];
 let abonnements = [];
 let soldeInitial = 0; // centimes
+let dateSoldeInitial = dateLocale();
+let soldeInitialVerrouille = false;
 let horizonProjection = HORIZON_PAR_DEFAUT;
 let categorieChoisie = null; // catégorie présélectionnée dans l'onglet Saisir
 let editionEnCours  = null;  // id de l'opération en cours de modification (sinon null)
@@ -131,6 +135,131 @@ function dateValide(date) {
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const parsed = new Date(date + 'T12:00:00');
   return !Number.isNaN(parsed.getTime()) && dateLocale(parsed) === date;
+}
+
+function dateDepuisAffichage(date) {
+  const saisie = date.trim();
+  const correspondance =
+    /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(saisie) ||
+    /^(\d{2})(\d{2})(\d{4})$/.exec(saisie);
+  if (!correspondance) return null;
+  const iso = correspondance[3] + '-' + correspondance[2] + '-' + correspondance[1];
+  return dateValide(iso) ? iso : null;
+}
+
+function datePourAffichage(date) {
+  if (!dateValide(date)) return '';
+  return date.slice(8, 10) + '/' + date.slice(5, 7) + '/' + date.slice(0, 4);
+}
+
+function formaterDateEnCours(champ) {
+  const position = champ.selectionStart === null ? champ.value.length : champ.selectionStart;
+  const chiffresAvant = champ.value.slice(0, position).replace(/\D/g, '').length;
+  const chiffres = champ.value.replace(/\D/g, '').slice(0, 8);
+  let valeur = chiffres.slice(0, 2);
+  if (chiffres.length >= 2) valeur += '/';
+  if (chiffres.length > 2) valeur += chiffres.slice(2, 4);
+  if (chiffres.length >= 4) valeur += '/';
+  if (chiffres.length > 4) valeur += chiffres.slice(4);
+  champ.value = valeur;
+  const nouvellePosition = chiffresAvant +
+    (chiffresAvant >= 2 ? 1 : 0) + (chiffresAvant >= 4 ? 1 : 0);
+  champ.setSelectionRange(
+    Math.min(nouvellePosition, valeur.length),
+    Math.min(nouvellePosition, valeur.length)
+  );
+}
+
+function fermerCalendriersDate() {
+  for (const calendrier of document.querySelectorAll('.calendrier-personnalise')) {
+    calendrier.hidden = true;
+  }
+  for (const bouton of document.querySelectorAll('.bouton-calendrier')) {
+    bouton.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function ouvrirCalendrierDate(champ, calendrier, bouton, dateMin, dateMax) {
+  fermerCalendriersDate();
+  const dateChoisie = dateDepuisAffichage(champ.value) || dateLocale();
+  const dateInitiale = new Date(dateChoisie + 'T12:00:00');
+  let annee = dateInitiale.getFullYear();
+  let mois = dateInitiale.getMonth();
+  const minimum = dateMin();
+  const maximum = dateMax();
+  calendrier.hidden = false;
+  bouton.setAttribute('aria-expanded', 'true');
+
+  const afficher = () => {
+    calendrier.replaceChildren();
+    const entete = document.createElement('div');
+    entete.className = 'calendrier-entete';
+    const titre = document.createElement('span');
+    titre.className = 'calendrier-mois';
+    titre.textContent = new Date(annee, mois, 1)
+      .toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    const precedent = document.createElement('button');
+    precedent.type = 'button';
+    precedent.className = 'calendrier-navigation';
+    precedent.textContent = '‹';
+    precedent.setAttribute('aria-label', 'Mois précédent');
+    precedent.disabled = Boolean(minimum &&
+      dateLocale(new Date(annee, mois, 0)) < minimum);
+    precedent.addEventListener('click', () => {
+      if (mois === 0) { annee--; mois = 11; } else mois--;
+      afficher();
+    });
+    const suivant = document.createElement('button');
+    suivant.type = 'button';
+    suivant.className = 'calendrier-navigation';
+    suivant.textContent = '›';
+    suivant.setAttribute('aria-label', 'Mois suivant');
+    suivant.disabled = Boolean(maximum &&
+      dateLocale(new Date(annee, mois + 1, 1)) > maximum);
+    suivant.addEventListener('click', () => {
+      if (mois === 11) { annee++; mois = 0; } else mois++;
+      afficher();
+    });
+    entete.append(precedent, titre, suivant);
+    calendrier.appendChild(entete);
+
+    const grille = document.createElement('div');
+    grille.className = 'calendrier-grille';
+    for (const jourSemaine of ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di']) {
+      const cellule = document.createElement('span');
+      cellule.className = 'calendrier-semaine';
+      cellule.textContent = jourSemaine;
+      grille.appendChild(cellule);
+    }
+    const premierJour = new Date(annee, mois, 1);
+    const decalage = (premierJour.getDay() + 6) % 7;
+    for (let i = 0; i < decalage; i++) {
+      const vide = document.createElement('span');
+      vide.className = 'calendrier-vide';
+      grille.appendChild(vide);
+    }
+    const nombreJours = new Date(annee, mois + 1, 0).getDate();
+    const aujourdHui = dateLocale();
+    for (let jour = 1; jour <= nombreJours; jour++) {
+      const date = dateLocale(new Date(annee, mois, jour));
+      const choix = document.createElement('button');
+      choix.type = 'button';
+      choix.className = 'calendrier-jour';
+      choix.textContent = String(jour);
+      choix.disabled = Boolean((minimum && date < minimum) ||
+        (maximum && date > maximum));
+      choix.classList.toggle('aujourdhui', date === aujourdHui);
+      choix.classList.toggle('selectionne', date === dateChoisie);
+      choix.addEventListener('click', () => {
+        champ.value = datePourAffichage(date);
+        fermerCalendriersDate();
+        champ.focus();
+      });
+      grille.appendChild(choix);
+    }
+    calendrier.appendChild(grille);
+  };
+  afficher();
 }
 
 function abonnementValide(a) {
@@ -202,8 +331,29 @@ function dateMaxProjection() {
   return ajouterMois(dateLocale(), horizonProjection);
 }
 
+function soldeActuel() {
+  const aujourdHui = dateLocale();
+  let solde = soldeInitial;
+  for (const depense of depenses) {
+    if (depense.date > dateSoldeInitial && depense.date <= aujourdHui) {
+      solde -= depense.montant;
+    }
+  }
+  for (const revenu of revenus) {
+    if (revenu.date > dateSoldeInitial && revenu.date <= aujourdHui) {
+      solde += revenu.montant;
+    }
+  }
+  return solde;
+}
+
+function normaliserHorizonProjection(valeur) {
+  if (Number.isInteger(valeur) && valeur >= 1 && valeur <= 12) return valeur;
+  return valeur === 0 ? 1 : HORIZON_PAR_DEFAUT;
+}
+
 function dateDefautAbonnement() {
-  return ajouterMois(dateLocale(), Math.min(1, horizonProjection));
+  return ajouterMois(dateLocale(), 1);
 }
 
 function categorieOperation(type, id) {
@@ -214,16 +364,11 @@ function categoriesActives(type) {
   return (type === 'revenu' ? categoriesRevenus : categories).filter((c) => !c.archivee);
 }
 
-// Tous les mois de la plus ancienne opération réelle au mois courant (celui-ci TOUJOURS inclus,
-// même sans dépense — exigence du cahier des charges).
+// Tous les mois du solde de départ au mois courant (celui-ci toujours inclus).
 function listeMoisDisponibles() {
   const courant = dateLocale().slice(0, 7);
-  let plusAncien = courant;
-  for (const d of depenses.concat(revenus)) {
-    if (d.date <= dateLocale() && d.date.slice(0, 7) < plusAncien) plusAncien = d.date.slice(0, 7);
-  }
   const liste = [];
-  let [y, m] = plusAncien.split('-').map(Number);
+  let [y, m] = dateSoldeInitial.slice(0, 7).split('-').map(Number);
   const [cy, cm] = courant.split('-').map(Number);
   while (y < cy || (y === cy && m <= cm)) {
     liste.push(y + '-' + pad2(m));
@@ -417,10 +562,16 @@ function chargerDepuisStockage() {
   catch { abonnements = []; }
   const soldeEnregistre = Number(localStorage.getItem(CLE_SOLDE_INITIAL));
   soldeInitial = Number.isSafeInteger(soldeEnregistre) ? soldeEnregistre : 0;
+  const dateSoldeEnregistree = localStorage.getItem(CLE_DATE_SOLDE_INITIAL);
+  dateSoldeInitial = dateValide(dateSoldeEnregistree) && dateSoldeEnregistree <= dateLocale()
+    ? dateSoldeEnregistree : dateLocale();
+  const verrouSoldeEnregistre = localStorage.getItem(CLE_SOLDE_INITIAL_VERROUILLE);
+  soldeInitialVerrouille = verrouSoldeEnregistre === null
+    ? localStorage.getItem(CLE_SOLDE_INITIAL) !== null
+    : verrouSoldeEnregistre === 'true';
   const horizonValeur = localStorage.getItem(CLE_HORIZON_PROJECTION);
   const horizonEnregistre = horizonValeur === null ? NaN : Number(horizonValeur);
-  horizonProjection = Number.isInteger(horizonEnregistre) && horizonEnregistre >= 1 && horizonEnregistre <= 12
-    ? horizonEnregistre : horizonEnregistre === 0 ? 1 : HORIZON_PAR_DEFAUT;
+  horizonProjection = normaliserHorizonProjection(horizonEnregistre);
   try { tickets = JSON.parse(localStorage.getItem(CLE_TICKETS)) ?? []; }
   catch { tickets = []; }
   try { labels = JSON.parse(localStorage.getItem(CLE_LABELS)) ?? []; }
@@ -454,9 +605,24 @@ function sauvegarder() {
   localStorage.setItem(CLE_CATEGORIES_REVENUS, JSON.stringify(categoriesRevenus));
   localStorage.setItem(CLE_ABONNEMENTS, JSON.stringify(abonnements));
   localStorage.setItem(CLE_SOLDE_INITIAL, String(soldeInitial));
+  localStorage.setItem(CLE_DATE_SOLDE_INITIAL, dateSoldeInitial);
+  localStorage.setItem(CLE_SOLDE_INITIAL_VERROUILLE, String(soldeInitialVerrouille));
   localStorage.setItem(CLE_HORIZON_PROJECTION, String(horizonProjection));
   localStorage.setItem(CLE_TICKETS, JSON.stringify(tickets));
   localStorage.setItem(CLE_LABELS, JSON.stringify(labels));
+}
+
+function mettreAJourFormulaireSoldeInitial() {
+  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  $('champ-date-solde-initial').value = datePourAffichage(dateSoldeInitial);
+  $('champ-solde-initial').disabled = soldeInitialVerrouille;
+  $('champ-date-solde-initial').disabled = soldeInitialVerrouille;
+  $('bouton-calendrier-solde').disabled = soldeInitialVerrouille;
+  $('bouton-enregistrer-solde').hidden = soldeInitialVerrouille;
+  $('bouton-modifier-solde').hidden = !soldeInitialVerrouille;
+  $('info-solde-initial').textContent = soldeInitialVerrouille
+    ? 'Verrouillé : solde enregistré au ' + dateCourte(dateSoldeInitial) + ', en fin de journée.'
+    : 'Le montant et la date seront verrouillés après enregistrement.';
 }
 
 /* ---------- 5. TOAST (message éphémère en bas d'écran) ---------- */
@@ -578,8 +744,7 @@ function terminerEdition(avecFocus) {
   $('champ-id').value = '';
   $('champ-montant').value = '';
   $('champ-note').value = '';
-  $('champ-date').value = dateLocale();
-  $('champ-date').max = dateMaxProjection();
+  $('champ-date').value = datePourAffichage(dateLocale());
   $('select-type-operation').disabled = false;
   $('select-type-operation').value = 'depense';
   mettreAJourFormulaireType('depense', categorieChoisie);
@@ -598,8 +763,7 @@ function modifierOperation(id, type) {
   mettreAJourFormulaireType(type, operation.categorieId);
   $('champ-id').value = id;
   $('champ-montant').value = (operation.montant / 100).toFixed(2);
-  $('champ-date').value = operation.date;
-  $('champ-date').max = dateMaxProjection();
+  $('champ-date').value = datePourAffichage(operation.date);
   $('champ-note').value = operation.note || '';
   $('champ-categorie').value = operation.categorieId;
   $('bouton-annuler').hidden = false;
@@ -935,14 +1099,7 @@ function bornesBilan() {
   switch (bilanMode) {
     case 'un-mois': return bornesMoisCalendaire(bilanMois); // un mois précis = TOUJOURS calendaire
     case 'plage':   return { debut: bilanMoisDeb + '-01', fin: bornesMoisCalendaire(bilanMoisFin).fin };
-    case 'tout': {
-      // Plus ancienne opération → aujourd'hui (ou juste aujourd'hui si vide).
-      let debut = dateLocale();
-      for (const d of depenses.concat(revenus)) {
-        if (d.date <= dateLocale() && d.date < debut) debut = d.date;
-      }
-      return { debut, fin: dateLocale() };
-    }
+    case 'tout':    return { debut: dateSoldeInitial, fin: dateLocale() };
     default:        return bornesMoisCourant(); // « Ce mois-ci » suit la préférence
   }
 }
@@ -980,6 +1137,11 @@ function totalMoisEvolution(mois) {
 // Remplit les trois <select> de mois ; le mois courant y figure toujours.
 function peuplerSelectsBilan() {
   const mois = listeMoisDisponibles();
+  const normaliserMois = (valeur) => mois.includes(valeur) ? valeur : mois[0];
+  bilanMois = normaliserMois(bilanMois);
+  bilanMoisDeb = normaliserMois(bilanMoisDeb);
+  bilanMoisFin = normaliserMois(bilanMoisFin);
+  if (bilanMoisDeb > bilanMoisFin) bilanMoisFin = bilanMoisDeb;
   const remplir = (select, valeur) => {
     select.innerHTML = '';
     for (const m of mois) {
@@ -994,7 +1156,7 @@ function peuplerSelectsBilan() {
 }
 
 function rendreBilan() {
-  peuplerSelectsBilan(); // les mois disponibles peuvent avoir grandi (première dépense ancienne)
+  peuplerSelectsBilan();
 
   // Affiche le sous-formulaire du mode actif seulement.
   $('choix-un-mois').hidden = bilanMode !== 'un-mois';
@@ -1195,13 +1357,15 @@ function construireCarteProjection() {
   carte.appendChild(titre);
   const description = document.createElement('p');
   description.className = 'info';
-  description.textContent = 'À partir du solde actuel saisi dans les réglages. Les opérations à venir et les abonnements sont prévisionnels.';
+  description.textContent = 'Solde de départ au ' + dateCourte(dateSoldeInitial) +
+    ', en fin de journée. Les opérations postérieures actualisent le solde courant ; les opérations à venir restent prévisionnelles.';
   carte.appendChild(description);
 
   const evenements = evenementsProjection();
   const fluxFuturs = evenements.filter((e) => !e.aConfirmer);
-  const points = [{ date: dateLocale(), label: 'Aujourd’hui', montant: soldeInitial }];
-  let solde = soldeInitial;
+  const soldeDuJour = soldeActuel();
+  const points = [{ date: dateLocale(), label: 'Aujourd’hui', montant: soldeDuJour }];
+  let solde = soldeDuJour;
   for (let i = 1; i <= horizonProjection; i++) {
     const date = ajouterMois(dateLocale(), i);
     for (const evenement of fluxFuturs) {
@@ -1709,6 +1873,8 @@ function exporterJSON() {
     revenus,
     abonnements,
     soldeInitialCentimes: soldeInitial,
+    dateSoldeInitial,
+    soldeInitialVerrouille,
     horizonProjection,
     tickets,
     labels,
@@ -1772,11 +1938,14 @@ async function importerJSON(fichier) {
       : CATEGORIES_REVENUS_DEPART.map((nom) => ({ id: nouvelId(), nom, archivee: false }));
     revenus = revenusValides;
     abonnements = abonnementsValides;
-    soldeInitial = Number.isSafeInteger(donnees.soldeInitialCentimes)
+    const soldeImporteValide = Number.isSafeInteger(donnees.soldeInitialCentimes);
+    soldeInitial = soldeImporteValide
       ? donnees.soldeInitialCentimes : 0;
-    horizonProjection = Number.isInteger(donnees.horizonProjection) &&
-      donnees.horizonProjection >= 1 && donnees.horizonProjection <= 12
-      ? donnees.horizonProjection : donnees.horizonProjection === 0 ? 1 : HORIZON_PAR_DEFAUT;
+    dateSoldeInitial = dateValide(donnees.dateSoldeInitial) && donnees.dateSoldeInitial <= dateLocale()
+      ? donnees.dateSoldeInitial : dateLocale();
+    soldeInitialVerrouille = typeof donnees.soldeInitialVerrouille === 'boolean'
+      ? donnees.soldeInitialVerrouille : soldeImporteValide;
+    horizonProjection = normaliserHorizonProjection(donnees.horizonProjection);
     tickets = Array.isArray(donnees.tickets) ? donnees.tickets : [];
     labels = Array.isArray(donnees.labels) ? donnees.labels : labels;
     sauvegarder();
@@ -1828,13 +1997,18 @@ const PROFILS_TEST = [
   { nom: 'Divers',            poids: 2,  min: 3,   max: 50, notes: [] },
 ];
 
+const MOIS_HISTORIQUE_TEST = 6;
+const TICKETS_PAR_MOIS_TEST = 3;
+
 function installerJeuDeTest() {
   const revenuMensuelMoyen = parseMontant($('champ-revenu-moyen-test').value);
   if (revenuMensuelMoyen === null) {
     alert('Saisis un revenu mensuel moyen valide.');
     return;
   }
-  if (!confirm('Installer le jeu de test ?\n\nEfface toutes les données actuelles, puis crée des dépenses unitaires, des tickets, six revenus mensuels et des abonnements fictifs.\nRevenu mensuel moyen : ' +
+  if (!confirm('Installer le jeu de test ?\n\nEfface toutes les données actuelles, puis crée deux dépenses unitaires, ' +
+      (MOIS_HISTORIQUE_TEST * TICKETS_PAR_MOIS_TEST) + ' tickets (' + TICKETS_PAR_MOIS_TEST +
+      ' par mois sur ' + MOIS_HISTORIQUE_TEST + ' mois), six revenus mensuels et des abonnements fictifs.\nRevenu mensuel moyen : ' +
       formaterEuros(revenuMensuelMoyen) + '.')) return;
   localStorage.setItem(CLE_REVENU_MOYEN_TEST, String(revenuMensuelMoyen));
 
@@ -1845,6 +2019,8 @@ function installerJeuDeTest() {
   localStorage.removeItem(CLE_CATEGORIES_REVENUS);
   localStorage.removeItem(CLE_ABONNEMENTS);
   localStorage.removeItem(CLE_SOLDE_INITIAL);
+  localStorage.removeItem(CLE_DATE_SOLDE_INITIAL);
+  localStorage.removeItem(CLE_SOLDE_INITIAL_VERROUILLE);
   localStorage.removeItem(CLE_HORIZON_PROJECTION);
   localStorage.removeItem(CLE_TICKETS);
   localStorage.removeItem(CLE_LABELS);
@@ -1894,32 +2070,15 @@ function installerJeuDeTest() {
     };
   };
 
-  // 2. Six mois d'historique : plus dense à mesure qu'on approche d'aujourd'hui.
+  // 2. Deux dépenses unitaires à 4 minutes d'écart pour vérifier le tri intra-journée.
   const AUJOURDHUI = new Date();
-  const COMPTES = [34, 30, 26, 22, 18, 14]; // mois courant → 5 mois en arrière
-  for (let i = 0; i < COMPTES.length; i++) {
-    const premier = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
-    const dernierJour = (i === 0)
-      ? AUJOURDHUI.getDate()                                   // mois en cours : pas de futur
-      : new Date(premier.getFullYear(), premier.getMonth() + 1, 0).getDate();
-    for (let n = 0; n < COMPTES[i]; n++) {
-      const jour = 1 + Math.floor(rng() * dernierJour);
-      depenses.push(creer(
-        new Date(premier.getFullYear(), premier.getMonth(), jour),
-        8 + Math.floor(rng() * 13), Math.floor(rng() * 60)      // entre 8h et 20h
-      ));
-    }
-  }
-
-  // 3. Un cas délibéré : deux achats le même jour, à 4 minutes d'écart —
-  //    vérifie le tri intra-journée de l'historique (12:07 doit précéder 12:03).
   const hier = new Date(AUJOURDHUI); hier.setDate(hier.getDate() - 1);
   depenses.push(creer(hier, 12, 3));
   depenses.push(creer(hier, 12, 7));
 
-  // 4. Un revenu par mois, au montant moyen choisi dans les réglages de test.
+  // 3. Un revenu par mois, au montant moyen choisi dans les réglages de test.
   const categorieSalaire = idCategorieParNom('revenu', 'Salaire');
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < MOIS_HISTORIQUE_TEST; i++) {
     const paiement = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
     revenus.push({
       id: nouvelId(), date: dateLocale(paiement), montant: revenuMensuelMoyen,
@@ -1928,7 +2087,7 @@ function installerJeuDeTest() {
     });
   }
 
-  // 5. Des abonnements actifs pour alimenter la projection et ses échéances.
+  // 4. Des abonnements actifs pour alimenter la projection et ses échéances.
   const prochainMois = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() + 1, 1);
   const dateAbonnement = (jour) =>
     dateLocale(new Date(prochainMois.getFullYear(), prochainMois.getMonth(), jour));
@@ -1952,46 +2111,48 @@ function installerJeuDeTest() {
   creerAbonnementTest('Assurance habitation', 'depense', 14500, categorieDivers,
     'annuelle', dateAbonnement(20));
 
-  // 6. Un ticket représentatif par mois, avec ses dépenses agrégées liées.
+  // 5. Trois tickets par mois, avec leurs dépenses agrégées liées.
   const labelBio = labels.find((label) => /bio/i.test(label.nom));
   const labelEvitable = labels.find((label) => /évitable/i.test(label.nom));
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < MOIS_HISTORIQUE_TEST; i++) {
     const premier = new Date(AUJOURDHUI.getFullYear(), AUJOURDHUI.getMonth() - i, 1);
     const dernierJour = i === 0
       ? AUJOURDHUI.getDate()
       : new Date(premier.getFullYear(), premier.getMonth() + 1, 0).getDate();
-    const jour = 1 + Math.floor(rng() * dernierJour);
-    const dateTicket = new Date(premier.getFullYear(), premier.getMonth(), jour);
-    const modele = TICKETS_SIMU[Math.floor(rng() * TICKETS_SIMU.length)];
-    const lignes = modele.lignes.map(([libelle, cents]) => {
-      const regle = REGLES_SIMU.find((r) =>
-        new RegExp(r.mot).test(libelle) && categories.some((c) => c.nom === r.cat));
-      const categorie = regle ? categories.find((c) => c.nom === regle.cat) : null;
-      const ligneLabels = [];
-      if (labelBio && /POMMES|TOMATES/.test(libelle) && rng() < 0.6) {
-        ligneLabels.push(labelBio.id);
-      }
-      if (labelEvitable && /CIGARETTES|VIN/.test(libelle)) {
-        ligneLabels.push(labelEvitable.id);
-      }
-      return { id: nouvelId(), label: libelle, cents, catId: categorie ? categorie.id : null, labels: ligneLabels };
-    });
-    const ticket = {
-      id: nouvelId(), magasin: modele.magasin, date: dateLocale(dateTicket),
-      lignes, labels: [], source: 'test',
-      creeLe: new Date(dateTicket.getFullYear(), dateTicket.getMonth(), dateTicket.getDate(), 12).toISOString(),
-    };
-    tickets.push(ticket);
-    const totaux = new Map();
-    for (const ligne of lignes) {
-      if (ligne.catId) totaux.set(ligne.catId, (totaux.get(ligne.catId) || 0) + ligne.cents);
-    }
-    for (const [categorieId, montant] of totaux) {
-      depenses.push({
-        id: nouvelId(), date: ticket.date, montant, categorieId,
-        note: ticket.magasin, source: 'test', ticketId: ticket.id,
-        creeLe: ticket.creeLe,
+    for (let n = 0; n < TICKETS_PAR_MOIS_TEST; n++) {
+      const jour = 1 + Math.floor(rng() * dernierJour);
+      const dateTicket = new Date(premier.getFullYear(), premier.getMonth(), jour);
+      const modele = TICKETS_SIMU[Math.floor(rng() * TICKETS_SIMU.length)];
+      const lignes = modele.lignes.map(([libelle, cents]) => {
+        const regle = REGLES_SIMU.find((r) =>
+          new RegExp(r.mot).test(libelle) && categories.some((c) => c.nom === r.cat));
+        const categorie = regle ? categories.find((c) => c.nom === regle.cat) : null;
+        const ligneLabels = [];
+        if (labelBio && /POMMES|TOMATES/.test(libelle) && rng() < 0.6) {
+          ligneLabels.push(labelBio.id);
+        }
+        if (labelEvitable && /CIGARETTES|VIN/.test(libelle)) {
+          ligneLabels.push(labelEvitable.id);
+        }
+        return { id: nouvelId(), label: libelle, cents, catId: categorie ? categorie.id : null, labels: ligneLabels };
       });
+      const ticket = {
+        id: nouvelId(), magasin: modele.magasin, date: dateLocale(dateTicket),
+        lignes, labels: [], source: 'test',
+        creeLe: new Date(dateTicket.getFullYear(), dateTicket.getMonth(), dateTicket.getDate(), 12).toISOString(),
+      };
+      tickets.push(ticket);
+      const totaux = new Map();
+      for (const ligne of lignes) {
+        if (ligne.catId) totaux.set(ligne.catId, (totaux.get(ligne.catId) || 0) + ligne.cents);
+      }
+      for (const [categorieId, montant] of totaux) {
+        depenses.push({
+          id: nouvelId(), date: ticket.date, montant, categorieId,
+          note: ticket.magasin, source: 'test', ticketId: ticket.id,
+          creeLe: ticket.creeLe,
+        });
+      }
     }
   }
 
@@ -2387,12 +2548,10 @@ function ouvrirFicheTicket(id, mode = 'consultation') {
 /* ---------- 12. DÉMARRAGE : câblage des événements + premier rendu ---------- */
 
 function rafraichirTout() {
-  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  mettreAJourFormulaireSoldeInitial();
   $('select-horizon-projection').value = String(horizonProjection);
   mettreAJourFormulaireType($('select-type-operation').value || 'depense',
     $('select-type-operation').value === 'revenu' ? $('champ-categorie').value : categorieChoisie);
-  $('champ-date').max = dateMaxProjection();
-  $('champ-date-abonnement').max = dateMaxProjection();
   remplirCategoriesAbonnement($('select-type-abonnement').value || 'depense');
   rendreChips();
   afficherTotalMois();
@@ -2403,6 +2562,43 @@ function rafraichirTout() {
 }
 
 function demarrer() {
+  const champsCalendrier = [
+    {
+      champ: 'champ-date', calendrier: 'calendrier-date',
+      bouton: 'bouton-calendrier-date', dateMin: () => null, dateMax: dateMaxProjection,
+    },
+    {
+      champ: 'champ-date-abonnement', calendrier: 'calendrier-abonnement',
+      bouton: 'bouton-calendrier-abonnement', dateMin: dateLocale, dateMax: dateMaxProjection,
+    },
+    {
+      champ: 'champ-date-solde-initial', calendrier: 'calendrier-solde',
+      bouton: 'bouton-calendrier-solde', dateMin: () => null, dateMax: dateLocale,
+    },
+  ];
+  for (const elements of champsCalendrier) {
+    const champ = $(elements.champ);
+    const calendrier = $(elements.calendrier);
+    const bouton = $(elements.bouton);
+    champ.addEventListener('input', () => formaterDateEnCours(champ));
+    bouton.addEventListener('click', () => {
+      if (!calendrier.hidden) {
+        fermerCalendriersDate();
+        return;
+      }
+      ouvrirCalendrierDate(champ, calendrier, bouton, elements.dateMin, elements.dateMax);
+    });
+  }
+  document.addEventListener('click', (event) => {
+    const calendrierOuvert = document.querySelector('.calendrier-personnalise:not([hidden])');
+    if (!(event.target instanceof Element) || !calendrierOuvert ||
+        !calendrierOuvert.closest('.date-saisie').contains(event.target)) {
+      fermerCalendriersDate();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') fermerCalendriersDate();
+  });
 
   // — Navigation
   for (const bouton of document.querySelectorAll('nav button')) {
@@ -2424,10 +2620,14 @@ function demarrer() {
     const type = editionEnCours ? editionType : $('select-type-operation').value;
     const categorieId = $('champ-categorie').value;
     if (!categorieId) { alert('Choisis une catégorie.'); return; }
-    const date = $('champ-date').value || dateLocale();
+    const date = dateDepuisAffichage($('champ-date').value);
+    if (!date) {
+      alert('Saisis une date valide au format JJ/MM/AAAA.');
+      return;
+    }
     const note = $('champ-note').value.trim();
     if (date > dateMaxProjection()) {
-      alert('La date dépasse l’horizon de projection choisi dans les réglages.');
+      alert('La date dépasse l’horizon choisi dans la page Projection.');
       return;
     }
     const collection = type === 'revenu' ? revenus : depenses;
@@ -2495,25 +2695,37 @@ function demarrer() {
       return;
     }
     horizonProjection = valeur;
-    $('champ-date').max = dateMaxProjection();
-    $('champ-date-abonnement').max = dateMaxProjection();
     sauvegarder();
     rendreProjection();
-    montrerToast('Horizon de projection enregistré ✔');
   });
-  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
-  $('champ-solde-initial').addEventListener('change', function () {
-    const valeur = Number(String(this.value).replace(',', '.'));
-    if (!Number.isFinite(valeur)) {
+  $('bouton-enregistrer-solde').addEventListener('click', () => {
+    if (soldeInitialVerrouille) return;
+    const saisieMontant = $('champ-solde-initial').value.trim();
+    const valeur = Number(saisieMontant.replace(',', '.'));
+    const montantCentimes = Math.round(valeur * 100);
+    if (!saisieMontant || !Number.isFinite(valeur) || !Number.isSafeInteger(montantCentimes)) {
       alert('Saisis un solde valide.');
-      this.value = (soldeInitial / 100).toFixed(2);
       return;
     }
-    soldeInitial = Math.round(valeur * 100);
+    const dateSaisie = dateDepuisAffichage($('champ-date-solde-initial').value);
+    if (!dateSaisie || dateSaisie > dateLocale()) {
+      alert('Saisis une date valide au format JJ/MM/AAAA, au plus tard aujourd’hui.');
+      return;
+    }
+    soldeInitial = montantCentimes;
+    dateSoldeInitial = dateSaisie;
+    soldeInitialVerrouille = true;
     sauvegarder();
-    rendreBilan();
+    mettreAJourFormulaireSoldeInitial();
     rendreProjection();
-    montrerToast('Solde de départ enregistré ✔');
+    montrerToast('Solde de départ enregistré et verrouillé ✔');
+  });
+  $('bouton-modifier-solde').addEventListener('click', () => {
+    if (!soldeInitialVerrouille) return;
+    if (!confirm('Le solde de départ est verrouillé. Veux-tu exceptionnellement le modifier ?')) return;
+    soldeInitialVerrouille = false;
+    sauvegarder();
+    mettreAJourFormulaireSoldeInitial();
   });
   $('form-categorie').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2566,9 +2778,13 @@ function demarrer() {
     const montant = parseMontant($('champ-montant-abonnement').value);
     const type = $('select-type-abonnement').value;
     const categorieId = $('select-categorie-abonnement').value;
-    const prochaineDate = $('champ-date-abonnement').value;
-    if (!nom || montant === null || !categorieId || !prochaineDate) {
+    const prochaineDate = dateDepuisAffichage($('champ-date-abonnement').value);
+    if (!nom || montant === null || !categorieId) {
       alert('Complète tous les champs de l’abonnement.');
+      return;
+    }
+    if (!prochaineDate) {
+      alert('Saisis une date valide au format JJ/MM/AAAA.');
       return;
     }
     if (prochaineDate < dateLocale() || prochaineDate > dateMaxProjection()) {
@@ -2586,7 +2802,7 @@ function demarrer() {
     this.reset();
     $('select-type-abonnement').value = 'depense';
     $('select-frequence-abonnement').value = 'mensuelle';
-    $('champ-date-abonnement').value = dateDefautAbonnement();
+    $('champ-date-abonnement').value = datePourAffichage(dateDefautAbonnement());
     remplirCategoriesAbonnement('depense');
     rafraichirTout();
     montrerToast('Abonnement ajouté ✔');
@@ -2631,6 +2847,8 @@ function demarrer() {
     localStorage.removeItem(CLE_CATEGORIES_REVENUS);
     localStorage.removeItem(CLE_ABONNEMENTS);
     localStorage.removeItem(CLE_SOLDE_INITIAL);
+    localStorage.removeItem(CLE_DATE_SOLDE_INITIAL);
+    localStorage.removeItem(CLE_SOLDE_INITIAL_VERROUILLE);
     localStorage.removeItem(CLE_HORIZON_PROJECTION);
     localStorage.removeItem(CLE_REVENU_MOYEN_TEST);
     localStorage.removeItem(CLE_TICKETS);
@@ -2747,17 +2965,15 @@ function demarrer() {
 
   // — Premier remplissage de l'écran
   chargerDepuisStockage();
-  $('champ-solde-initial').value = (soldeInitial / 100).toFixed(2);
+  mettreAJourFormulaireSoldeInitial();
   $('select-horizon-projection').value = String(horizonProjection);
-  $('champ-date').max = dateMaxProjection();
-  $('champ-date-abonnement').max = dateMaxProjection();
-  $('champ-date-abonnement').value = dateDefautAbonnement();
+  $('champ-date-abonnement').value = datePourAffichage(dateDefautAbonnement());
   remplirCategoriesAbonnement('depense');
   $('champ-couleur-categorie').value = PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length];
   $('champ-couleur-label').value = PALETTE_LABELS[labels.length % PALETTE_LABELS.length];
   mettreAJourFormulaireType('depense', categorieChoisie);
   rendreChips();
-  $('champ-date').value = dateLocale();
+  $('champ-date').value = datePourAffichage(dateLocale());
   afficherTotalMois();
   rendreHistorique();
   rendreBilan();

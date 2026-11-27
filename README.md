@@ -26,9 +26,10 @@ niveau de détail.
 - 🔁 **Abonnements** : échéances hebdomadaires, mensuelles ou annuelles
   projetées à l’avance ; chaque échéance est confirmée à son arrivée avant
   d’être ajoutée à l’historique
-- 📈 **Projection du solde** : solde actuel de départ et horizon réglable de
-  0 à 12 mois ; les opérations futures manuelles et les échéances prévues
-  restent distinctes des opérations réalisées
+- 📈 **Projection du solde** : solde de départ daté et verrouillé après
+  enregistrement, modifiable après déverrouillage explicite ; les opérations
+  postérieures à cette date actualisent le solde courant ; horizon de +1 à +12
+  mois choisi sur la page Projection
 - 🏅 **Labels** : une dimension transversale aux catégories (BIO, Évitable…),
   posables sur tout le ticket ou sur une ligne — badge plein = label du ticket,
   badge contour = label présent sur au moins une ligne
@@ -37,8 +38,8 @@ niveau de détail.
   s'affichent sans groupes
 - 📊 **Bilan** par période : revenus, dépenses et solde net réalisés ; mois
   courant (= mois calendaire ou mois glissant, au choix), mois précis, plage
-  de mois, ou depuis le début ; répartition des dépenses par catégorie ou par
-  label (sans ligne « Sans label »), revenus par catégorie, courbe d'évolution
+  de mois, ou depuis la date du solde de départ ; répartition des dépenses par
+  catégorie ou par label (sans ligne « Sans label »), revenus par catégorie, courbe d'évolution
   sur 6 mois et projection séparée du solde futur
 - 🧭 **Navigation et préférences** : onglets Bilan, Projection et Historique ;
   bouton Saisir toujours accessible et Réglages via la roue dentée ; choix de
@@ -70,8 +71,8 @@ niveau de détail.
   et l'ergonomie (écran de validation de ticket, drag & drop, picker) avant
   d'écrire le gros œuvre. Presque tout le prototype survit en phase D.
 - **Comment tester ?** Ouvrir `index.html` dans un navigateur. Un jeu de test
-  reproductible (dépenses unitaires, tickets, revenus sur 6 mois et
-  abonnements) est disponible dans **Réglages → Zone de danger** ; le revenu
+  reproductible (2 dépenses unitaires, 18 tickets répartis sur 6 mois, revenus
+  et abonnements) est disponible dans **Réglages → Zone de danger** ; le revenu
   mensuel moyen du jeu est paramétrable sur place. Pour essayer la simulation
   d'un ticket, aller dans **Saisir** et cliquer sur **Simuler un ticket (V2)**.
   La simulation de ticket concerne les dépenses ; le bouton n’apparaît pas pour

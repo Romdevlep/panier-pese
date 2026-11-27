@@ -42,13 +42,17 @@ opérations réalisées. À l'échéance, l'utilisateur confirme l'opération ; 
 est alors ajoutée à l'historique et l'échéance suivante est générée. Un
 abonnement peut être suspendu, repris ou supprimé.
 
-L'horizon de projection est réglable de 0 à 12 mois. Il limite les dates
-autorisées pour les opérations futures manuelles, la création des échéances
-d'abonnement et la projection du solde. Le graphique part du solde actuel
-saisi dans les réglages et ajoute les revenus prévus, puis retranche les
-dépenses prévues. Les prévisions restent séparées du bilan des opérations
-réalisées. Une échéance déjà arrivée mais non confirmée est présentée comme
-à confirmer et n'est pas comptée dans le solde projeté.
+L'horizon de projection se sélectionne sur la page Projection, de +1 à +12
+mois. Il limite les dates autorisées pour les opérations futures manuelles,
+la création des échéances d'abonnement et la projection du solde. Le solde de
+départ est saisi avec sa date de référence, en fin de journée. Les opérations
+enregistrées après cette date actualisent le solde courant ; le graphique part
+de ce solde calculé et ajoute les revenus prévus, puis retranche les dépenses
+prévues. Après enregistrement, le solde de départ et sa date sont verrouillés ;
+une modification ultérieure exige un déverrouillage explicite et une nouvelle
+sauvegarde les verrouille à nouveau. Les prévisions restent séparées du bilan
+des opérations réalisées. Une échéance déjà arrivée mais non confirmée est
+présentée comme à confirmer et n'est pas comptée dans le solde projeté.
 
 ### 3.4 Tickets (saisies atomiques)
 Un ticket = une saisie complète : magasin, date, et la liste des lignes
@@ -89,6 +93,9 @@ Quatre modes : mois courant (défaut au_contact de l'écran), un mois précis,
 plage de deux mois, depuis le début. Règles :
 - un mois PRÉCIS est toujours un mois calendaire ;
 - le sélecteur propose toujours le mois courant ;
+- « Depuis le début » commence à la date enregistrée du solde de départ ;
+- les sélecteurs « un mois précis » et « entre deux mois » commencent au mois
+  et à l'année du solde de départ ;
 - la préférence Réglages décide ce que désigne « ce mois-ci » : mois
   calendaire (défaut) ou mois glissant (même jour du mois dernier →
   aujourd'hui) ;
@@ -109,7 +116,8 @@ plage de deux mois, depuis le début. Règles :
 
 ### 3.8 Sauvegarde
 Export/import JSON complet (catégories, dépenses, revenus, abonnements,
-tickets, labels, solde de départ et horizon), export CSV signé (sémicolons,
+tickets, labels, solde de départ, date de référence, état du verrouillage et
+horizon), export CSV signé (sémicolons,
 virgule décimale, BOM UTF-8 — Excel FR en un double-clic), rappel de la date
 de dernière sauvegarde. Rotation conseillée : garder les 5 derniers exports
 datés.
@@ -119,9 +127,10 @@ La navigation principale propose les onglets Bilan, Projection et Historique.
 La saisie est une action accessible via un bouton dédié ; les Réglages sont
 accessibles depuis la roue dentée de l'en-tête. La page d'accueil peut être
 choisie parmi Bilan, Projection et Historique. Les préférences comprennent
-également le mois calendaire/glissant, le solde actuel de départ et l'horizon
-de projection (0 à 12 mois). Zone de danger : effacement avec double
-confirmation.
+également le mois calendaire/glissant et le solde de départ daté, verrouillé
+après enregistrement avec une option de déverrouillage exceptionnel. L'horizon
+se sélectionne dans Projection, de +1 à +12 mois. Zone de danger : effacement
+avec double confirmation.
 
 ## 4. Modèle de données
 
@@ -143,7 +152,8 @@ Invariants :
 - montants positifs en centimes entiers (jamais de flottant en base) ; le
   signe est déterminé par le type d'opération ;
 - dates en chaînes AAAA-MM-JJ (comparables comme du texte — c'est ce qui
-  fait fonctionner tous les filtres de période) ;
+  fait fonctionner tous les filtres de période), affichées JJ/MM/AAAA dans
+  les champs de saisie ;
 - les opérations futures et échéances projetées n'entrent pas dans les totaux
   réalisés ;
 - pas de clé étrangère bloquante : une référence orpheline s'affiche
@@ -153,8 +163,8 @@ Invariants :
   échéance confirmée à son abonnement.
 
 Clés isolées : préférence de mois, page d'accueil, aide ticket déjà affichée,
-revenus, catégories de revenus, abonnements, solde de départ, horizon de
-projection et date du dernier export.
+revenus, catégories de revenus, abonnements, solde de départ et sa date,
+verrouillage du solde, horizon de projection et date du dernier export.
 
 ## 5. Non-objectifs V1 (écrits noir sur blanc)
 
@@ -213,7 +223,7 @@ projection et date du dernier export.
 - 2026-11 : montants en centimes, dates en AAAA-MM-JJ, export JSON comme
   format pivot de sauvegarde.
 - 2026-11 : budget global avec catégories de revenus distinctes, solde de
-  départ configurable et projection réglable de 0 à 12 mois.
+  départ configurable et projection sélectionnable de +1 à +12 mois.
 - 2026-11 : abonnements hebdomadaires, mensuels ou annuels ; leurs échéances
   sont prévisionnelles et demandent confirmation avant d'être comptabilisées.
 - 2026-11 : smartphone = source principale des données (la caméra y est) ;
@@ -223,7 +233,7 @@ projection et date du dernier export.
 
 _Cadrage : application offline-first, aucune donnée transmise à un serveur ;
 dépôt public sans secret. Les outils de test intégrés au prototype (jeu de
-données à graine fixe avec dépenses unitaires, tickets, six revenus mensuels
-au montant moyen paramétrable et abonnements, simulation de ticket, purge
-ciblée `source: 'test'`) sont des instruments de développement, à retirer en
-version finale._
+données à graine fixe avec deux dépenses unitaires, trois tickets par mois sur
+six mois, six revenus mensuels au montant moyen paramétrable et abonnements,
+simulation de ticket, purge ciblée `source: 'test'`) sont des instruments de
+développement, à retirer en version finale._

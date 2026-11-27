@@ -54,7 +54,15 @@
         <select id="champ-categorie" required></select>
 
         <label for="champ-date">Date</label>
-        <input id="champ-date" type="date" required>
+        <div class="date-saisie">
+          <input id="champ-date" type="text" inputmode="numeric" maxlength="10"
+                 placeholder="JJ/MM/AAAA" autocomplete="off" required>
+          <button id="bouton-calendrier-date" type="button" class="bouton-calendrier"
+                  aria-label="Choisir la date de l’opération" aria-controls="calendrier-date"
+                  aria-expanded="false" title="Choisir une date">📅</button>
+          <div id="calendrier-date" class="calendrier-personnalise" role="dialog"
+               aria-label="Choisir la date de l’opération" hidden></div>
+        </div>
 
         <label for="champ-note">Note (facultative)</label>
         <input id="champ-note" type="text" maxlength="80"
@@ -107,10 +115,10 @@
         <div id="bilan-resume" class="bilan-resume"></div>
       </div>
 
-      <label for="select-bilan-dimension">Répartition</label>
-      <select id="select-bilan-dimension">
-        <option value="categorie">Par catégorie</option>
-        <option value="label">Par label</option>
+      <select id="select-bilan-dimension" class="bilan-dimension"
+              aria-label="Choisir la répartition du bilan">
+        <option value="categorie">Répartition par catégorie</option>
+        <option value="label">Répartition par label</option>
       </select>
       <div id="bilan-contenu"></div>
     </section>
@@ -119,18 +127,18 @@
       <div class="carte">
         <label for="select-horizon-projection">Horizon de projection</label>
         <select id="select-horizon-projection">
-          <option value="1">+1 mois</option>
-          <option value="2">+2 mois</option>
-          <option value="3">+3 mois</option>
-          <option value="4">+4 mois</option>
-          <option value="5">+5 mois</option>
-          <option value="6">+6 mois</option>
-          <option value="7">+7 mois</option>
-          <option value="8">+8 mois</option>
-          <option value="9">+9 mois</option>
-          <option value="10">+10 mois</option>
-          <option value="11">+11 mois</option>
-          <option value="12">+12 mois</option>
+          <option value="1">1 mois</option>
+          <option value="2">2 mois</option>
+          <option value="3">3 mois</option>
+          <option value="4">4 mois</option>
+          <option value="5">5 mois</option>
+          <option value="6">6 mois</option>
+          <option value="7">7 mois</option>
+          <option value="8">8 mois</option>
+          <option value="9">9 mois</option>
+          <option value="10">10 mois</option>
+          <option value="11">11 mois</option>
+          <option value="12">12 mois</option>
         </select>
       </div>
       <div id="projection-contenu"></div>
@@ -210,7 +218,15 @@
               <option value="annuelle">Chaque année</option>
             </select>
             <label for="champ-date-abonnement">Prochaine échéance</label>
-            <input id="champ-date-abonnement" type="date" required>
+            <div class="date-saisie">
+              <input id="champ-date-abonnement" type="text" inputmode="numeric" maxlength="10"
+                     placeholder="JJ/MM/AAAA" autocomplete="off" required>
+              <button id="bouton-calendrier-abonnement" type="button" class="bouton-calendrier"
+                      aria-label="Choisir la prochaine échéance" aria-controls="calendrier-abonnement"
+                      aria-expanded="false" title="Choisir une date">📅</button>
+              <div id="calendrier-abonnement" class="calendrier-personnalise" role="dialog"
+                   aria-label="Choisir la prochaine échéance" hidden></div>
+            </div>
             <button type="submit" class="bouton">Créer l’abonnement</button>
           </form>
         </details>
@@ -241,8 +257,24 @@
           <option value="projection">Projection</option>
           <option value="historique">Historique</option>
         </select>
-        <label for="champ-solde-initial">Solde actuel de départ (€)</label>
-        <input id="champ-solde-initial" type="number" step="0.01" inputmode="decimal" value="0">
+        <label for="champ-solde-initial">Solde de départ (€)</label>
+        <input id="champ-solde-initial" type="number" step="0.01" inputmode="decimal" value="0" required>
+        <label for="champ-date-solde-initial">Date du solde de départ</label>
+        <div class="date-saisie">
+          <input id="champ-date-solde-initial" type="text" inputmode="numeric" maxlength="10"
+                 placeholder="JJ/MM/AAAA" autocomplete="off" required>
+          <button id="bouton-calendrier-solde" type="button" class="bouton-calendrier"
+                  aria-label="Choisir la date du solde de départ" aria-controls="calendrier-solde"
+                  aria-expanded="false" title="Choisir une date">📅</button>
+          <div id="calendrier-solde" class="calendrier-personnalise" role="dialog"
+               aria-label="Choisir la date du solde de départ" hidden></div>
+        </div>
+        <p id="info-solde-initial" class="info"></p>
+        <p class="info">Le montant correspond au solde en fin de journée ; les opérations des jours suivants sont ajoutées à la projection.</p>
+        <button id="bouton-enregistrer-solde" type="button" class="bouton">Enregistrer et verrouiller</button>
+        <button id="bouton-modifier-solde" type="button" class="bouton secondaire" hidden>
+          Modifier le solde de départ
+        </button>
       </div>
 
       <div class="carte">
