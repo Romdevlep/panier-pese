@@ -31,7 +31,8 @@ les plus utilisées (fenêtre de 2 mois, tri par fréquence).
 Les catégories de dépenses et de revenus sont séparées. Elles peuvent être
 créées, renommées, archivées et, si inutilisées, supprimées. Les catégories de
 dépenses ont une couleur choisie parmi une palette de douze couleurs, ou
-personnalisée via le mode avancé. Les groupes ne sont pas affichés. Une
+personnalisée via le mode avancé dans leur écran de modification, qui permet
+aussi de choisir leur présence dans l'évolution. Les groupes ne sont pas affichés. Une
 opération possède une seule catégorie.
 
 ### 3.3 Abonnements et projection
@@ -71,7 +72,8 @@ La validation d'un ticket produit des dépenses agrégées par catégorie
 Dimension transversale aux catégories : ils répondent à « comment c'est fait ?
 » et se cumulent (BIO, Évitable…). Liste FERMÉE mais modifiable comme les
 catégories (ajouter, renommer, archiver — pas de suppression : les tickets y
-référencent), avec le même choix de palette et mode avancé. Pose :
+référencent), avec le même écran de modification pour la couleur et le suivi
+dans l'évolution. Pose :
 - sur le TICKET entier (ça vaut pour tout), ou
 - sur une LIGNE du ticket (ex. le ticket n'est pas évitable, la ligne
   « paquet de chips » l'est), ou
@@ -111,7 +113,9 @@ plage de deux mois, depuis le début. Règles :
   revenus sont répartis selon leurs catégories ;
 - vue de tendance « évolution 6 mois » en courbe, toujours en mois
   calendaires et ancrée sur aujourd'hui ; filtre possible sur toutes les
-  dépenses, une catégorie ou un label précis ;
+  dépenses, une catégorie ou un label dont le suivi est activé ; les anciens
+  éléments et les nouveaux sont suivis par défaut, y compris les éléments
+  archivés tant que leur suivi n'est pas désactivé ;
 - graphique distinct de projection du solde sur l'horizon sélectionné.
 
 ### 3.8 Sauvegarde
@@ -141,10 +145,10 @@ prévisions et ne deviennent des opérations qu'après confirmation.**
 | Entité | Champs |
 |---|---|
 | Dépense / Revenu | id, date (AAAA-MM-JJ), montant positif (CENTIMES, entier), categorieId → catégorie du type correspondant, note, source, ticketId? → Ticket pour les dépenses de ticket, abonnementId? → Abonnement, creeLe |
-| Catégorie de dépense | id, nom, couleur, archivée |
+| Catégorie de dépense | id, nom, couleur, archivée, suiviEvolution |
 | Catégorie de revenu | id, nom, archivée |
 | Ticket | id, magasin, date, lignes[] {id, libellé, montants (centimes), categorieId?, labels[]}, labels[], source, creeLe |
-| Label | id, nom, couleur, archivé |
+| Label | id, nom, couleur, archivé, suiviEvolution |
 | Abonnement | id, nom, type, montant (centimes), categorieId, fréquence, prochaineDate, jourMois, moisAnnee, archivé |
 | Préférences budgétaires | solde actuel de départ (centimes), horizon (0–12 mois) |
 

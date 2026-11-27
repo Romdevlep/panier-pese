@@ -2942,8 +2942,6 @@ function demarrer() {
   $('select-horizon-projection').value = String(horizonProjection);
   $('champ-date-abonnement').value = datePourAffichage(dateDefautAbonnement());
   remplirCategoriesAbonnement('depense');
-  $('champ-couleur-categorie').value = PALETTE_CATEGORIES[categories.length % PALETTE_CATEGORIES.length];
-  $('champ-couleur-label').value = PALETTE_LABELS[labels.length % PALETTE_LABELS.length];
   mettreAJourFormulaireType('depense', categorieChoisie);
   rendreChips();
   $('champ-date').value = datePourAffichage(dateLocale());

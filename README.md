@@ -34,13 +34,14 @@ niveau de détail.
   posables sur tout le ticket ou sur une ligne — badge plein = label du ticket,
   badge contour = label présent sur au moins une ligne
 - 🎨 **Catégories et labels personnalisables** : choix parmi 12 couleurs,
-  avec un mode avancé pour choisir une couleur précise ; les catégories
-  s'affichent sans groupes
+  avec un mode avancé pour choisir une couleur précise dans leur écran de
+  modification ; les catégories s'affichent sans groupes
 - 📊 **Bilan** par période : revenus, dépenses et solde net réalisés ; mois
   courant (= mois calendaire ou mois glissant, au choix), mois précis, plage
   de mois, ou depuis la date du solde de départ ; répartition des dépenses par
   catégorie ou par label (sans ligne « Sans label »), revenus par catégorie, courbe d'évolution
-  sur 6 mois et projection séparée du solde futur
+  sur 6 mois et projection séparée du solde futur ; les catégories et labels
+  proposés dans l'évolution se choisissent dans leur écran de modification
 - 🧭 **Navigation et préférences** : onglets Bilan, Projection et Historique ;
   bouton Saisir toujours accessible et Réglages via la roue dentée ; choix de
   la page d'accueil parmi ces trois onglets
